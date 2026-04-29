@@ -294,3 +294,97 @@ func TestClose_SendsCloseFrameAndMarksDisconnected(t *testing.T) {
 		t.Fatal("expected client to report disconnected after close")
 	}
 }
+
+func TestDiscoverSocket_EnvOverride(t *testing.T) {
+	dir := t.TempDir()
+	overridePath := filepath.Join(dir, "override.sock")
+	if _, err := os.Create(overridePath); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("DISCORD_IPC_PATH", overridePath)
+	t.Setenv("XDG_RUNTIME_DIR", dir)
+
+	found, err := DiscoverSocket()
+	if err != nil {
+		t.Fatalf("DiscoverSocket failed: %v", err)
+	}
+	if found != overridePath {
+		t.Errorf("expected env override %q, got %q", overridePath, found)
+	}
+}
+
+func TestDiscoverSocket_IndexedPath(t *testing.T) {
+	dir := t.TempDir()
+	t.Setenv("DISCORD_IPC_PATH", "")
+	t.Setenv("XDG_RUNTIME_DIR", dir)
+
+	// Create discord-ipc-1 but not discord-ipc-0.
+	path1 := filepath.Join(dir, "discord-ipc-1")
+	if _, err := os.Create(path1); err != nil {
+		t.Fatal(err)
+	}
+
+	found, err := DiscoverSocket()
+	if err != nil {
+		t.Fatalf("DiscoverSocket failed: %v", err)
+	}
+	if found != path1 {
+		t.Errorf("expected %q, got %q", path1, found)
+	}
+}
+
+func TestDiscoverSocket_StandardPriorityOverFlatpak(t *testing.T) {
+	dir := t.TempDir()
+	t.Setenv("DISCORD_IPC_PATH", "")
+	t.Setenv("XDG_RUNTIME_DIR", dir)
+
+	// Create both standard and Flatpak sockets.
+	standardPath := filepath.Join(dir, "discord-ipc-0")
+	if _, err := os.Create(standardPath); err != nil {
+		t.Fatal(err)
+	}
+
+	flatpakDir := filepath.Join(dir, "app", "com.discordapp.Discord")
+	if err := os.MkdirAll(flatpakDir, 0755); err != nil {
+		t.Fatal(err)
+	}
+	flatpakSocket := filepath.Join(flatpakDir, "discord-ipc-2")
+	if _, err := os.Create(flatpakSocket); err != nil {
+		t.Fatal(err)
+	}
+
+	found, err := DiscoverSocket()
+	if err != nil {
+		t.Fatalf("DiscoverSocket failed: %v", err)
+	}
+	if found != standardPath {
+		t.Errorf("expected standard path %q to win over flatpak, got %q", standardPath, found)
+	}
+}
+
+func TestDiscoverSocket_EnvOverrideWinsOverLocal(t *testing.T) {
+	dir := t.TempDir()
+	t.Setenv("XDG_RUNTIME_DIR", dir)
+
+	// Create a local discord-ipc-0.
+	localPath := filepath.Join(dir, "discord-ipc-0")
+	if _, err := os.Create(localPath); err != nil {
+		t.Fatal(err)
+	}
+
+	// Create an env override that does NOT exist.
+	overridePath := filepath.Join(dir, "override.sock")
+	// Do NOT create the override file.
+
+	t.Setenv("DISCORD_IPC_PATH", overridePath)
+
+	// Because env override is checked first and does not exist,
+	// it should fall through to the local path.
+	found, err := DiscoverSocket()
+	if err != nil {
+		t.Fatalf("DiscoverSocket failed: %v", err)
+	}
+	if found != localPath {
+		t.Errorf("expected fallback to local %q, got %q", localPath, found)
+	}
+}

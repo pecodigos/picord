@@ -226,6 +226,114 @@ func TestRPCManager_RetriesAfterInitialFailureWithMockSocket(t *testing.T) {
 	rm.close()
 }
 
+func TestRPCManager_ReplaysDesiredActivityOnReconnect(t *testing.T) {
+	orig := rpcNewClient
+	defer func() { rpcNewClient = orig }()
+
+	dir := t.TempDir()
+	socketPath := filepath.Join(dir, "discord-ipc-0")
+	listener, err := net.Listen("unix", socketPath)
+	if err != nil {
+		t.Fatalf("listen: %v", err)
+	}
+	defer listener.Close()
+
+	frames := make(chan string, 16)
+	go func() {
+		for {
+			conn, err := listener.Accept()
+			if err != nil {
+				return
+			}
+			go func(c net.Conn) {
+				defer c.Close()
+				for {
+					header := make([]byte, 8)
+					if _, err := io.ReadFull(c, header); err != nil {
+						return
+					}
+					op := binary.LittleEndian.Uint32(header[0:4])
+					length := binary.LittleEndian.Uint32(header[4:8])
+					payload := make([]byte, length)
+					if _, err := io.ReadFull(c, payload); err != nil {
+						return
+					}
+					var pld map[string]any
+					if len(payload) > 0 {
+						_ = json.Unmarshal(payload, &pld)
+					}
+					if op == 0 {
+						frames <- "handshake"
+						resp, _ := json.Marshal(map[string]any{
+							"cmd": "DISPATCH", "evt": "READY", "data": map[string]any{},
+						})
+						h := make([]byte, 8)
+						binary.LittleEndian.PutUint32(h[0:4], 1)
+						binary.LittleEndian.PutUint32(h[4:8], uint32(len(resp)))
+						c.Write(h)
+						c.Write(resp)
+					} else if op == 1 {
+						cmd, _ := pld["cmd"].(string)
+						frames <- cmd
+						resp, _ := json.Marshal(map[string]any{
+							"cmd": cmd, "nonce": pld["nonce"], "data": map[string]any{"ok": true},
+						})
+						h := make([]byte, 8)
+						binary.LittleEndian.PutUint32(h[0:4], 1)
+						binary.LittleEndian.PutUint32(h[4:8], uint32(len(resp)))
+						c.Write(h)
+						c.Write(resp)
+					}
+				}
+			}(conn)
+		}
+	}()
+
+	t.Setenv("DISCORD_IPC_PATH", socketPath)
+
+	rpcNewClient = func(appID string) (*rpc.Client, error) {
+		return rpc.NewClient(appID)
+	}
+
+	rm := newRPCManager("test-app")
+	if err := rm.connect(); err != nil {
+		t.Fatalf("first connect: %v", err)
+	}
+	if <-frames != "handshake" {
+		t.Fatal("expected handshake")
+	}
+
+	act := &rpc.RichActivity{Details: "Playing Tests"}
+	if err := rm.setActivity(act); err != nil {
+		t.Fatalf("setActivity: %v", err)
+	}
+	if <-frames != "SET_ACTIVITY" {
+		t.Fatal("expected SET_ACTIVITY")
+	}
+
+	// Simulate disconnect by nulling the client reference.
+	rm.mu.Lock()
+	oldClient := rm.client
+	rm.client = nil
+	rm.mu.Unlock()
+	if oldClient != nil {
+		oldClient.Close()
+	}
+
+	// Reconnect should replay desired activity automatically.
+	if err := rm.connect(); err != nil {
+		t.Fatalf("reconnect: %v", err)
+	}
+	if <-frames != "handshake" {
+		t.Fatal("expected handshake after reconnect")
+	}
+	if <-frames != "SET_ACTIVITY" {
+		t.Fatal("expected SET_ACTIVITY replay after reconnect")
+	}
+
+	rm.close()
+}
+
 func TestDefaultConfigSources(t *testing.T) {
 	cfg := defaultConfig()
 	for _, s := range cfg.Catalog.Sources {

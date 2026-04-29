@@ -8,6 +8,7 @@ import (
 	"io"
 	"net"
 	"os"
+	"path/filepath"
 	"sync"
 	"time"
 )
@@ -18,63 +19,43 @@ const (
 	opClose     = 2
 )
 
-var socketPaths = []func() (string, error){
-	func() (string, error) {
-		if p := os.Getenv("DISCORD_IPC_PATH"); p != "" {
+func DiscoverSocket() (string, error) {
+	// 1. Explicit env override takes highest priority.
+	if p := os.Getenv("DISCORD_IPC_PATH"); p != "" {
+		if _, err := os.Stat(p); err == nil {
 			return p, nil
 		}
-		return "", errors.New("not set")
-	},
-	func() (string, error) {
-		dir := os.Getenv("XDG_RUNTIME_DIR")
-		if dir == "" {
-			uid := os.Getuid()
-			dir = fmt.Sprintf("/run/user/%d", uid)
-		}
-		return fmt.Sprintf("%s/discord-ipc-0", dir), nil
-	},
-	func() (string, error) {
-		uid := os.Getuid()
-		return fmt.Sprintf("/run/user/%d/discord-ipc-0", uid), nil
-	},
-	func() (string, error) {
-		tmp := os.TempDir()
-		return fmt.Sprintf("%s/discord-ipc-0", tmp), nil
-	},
-}
-
-var flatpakPaths = []string{
-	"discord-ipc-0",
-	"discord-ipc-1",
-	"discord-ipc-2",
-}
-
-func DiscoverSocket() (string, error) {
-	for _, p := range flatpakPaths {
-		candidate := fmt.Sprintf("%s/app/com.discordapp.Discord/%s",
-			os.Getenv("XDG_RUNTIME_DIR"), p)
-		if _, err := os.Stat(candidate); err == nil {
-			return candidate, nil
-		}
 	}
-	for _, fn := range socketPaths {
-		path, err := fn()
-		if err != nil {
-			continue
-		}
-		if _, err := os.Stat(path); err == nil {
-			return path, nil
-		}
+
+	// Build candidate directories.
+	var dirs []string
+	if rd := os.Getenv("XDG_RUNTIME_DIR"); rd != "" {
+		dirs = append(dirs, rd)
 	}
-	for i := 0; i < 10; i++ {
-		for _, fn := range socketPaths {
-			base, _ := fn()
-			path := fmt.Sprintf("%s-%d", base, i)
-			if _, err := os.Stat(path); err == nil {
-				return path, nil
+	uid := os.Getuid()
+	dirs = append(dirs, fmt.Sprintf("/run/user/%d", uid))
+	dirs = append(dirs, os.TempDir())
+
+	// 2. Standard indexed sockets in each directory.
+	for _, dir := range dirs {
+		for i := 0; i < 10; i++ {
+			candidate := filepath.Join(dir, fmt.Sprintf("discord-ipc-%d", i))
+			if _, err := os.Stat(candidate); err == nil {
+				return candidate, nil
 			}
 		}
 	}
+
+	// 3. Flatpak-specific paths.
+	if rd := os.Getenv("XDG_RUNTIME_DIR"); rd != "" {
+		for i := 0; i < 10; i++ {
+			candidate := filepath.Join(rd, "app", "com.discordapp.Discord", fmt.Sprintf("discord-ipc-%d", i))
+			if _, err := os.Stat(candidate); err == nil {
+				return candidate, nil
+			}
+		}
+	}
+
 	return "", errors.New("no Discord IPC socket found; is Discord running?")
 }
 

@@ -69,9 +69,10 @@ func setupDebugLogging() {
 var rpcNewClient = rpc.NewClient
 
 type rpcManager struct {
-	mu     sync.Mutex
-	client *rpc.Client
-	appID  string
+	mu              sync.Mutex
+	client          *rpc.Client
+	appID           string
+	desiredActivity *rpc.RichActivity
 }
 
 func newRPCManager(appID string) *rpcManager {
@@ -92,6 +93,10 @@ func (rm *rpcManager) connect() error {
 		return err
 	}
 	rm.client = c
+	// Replay the last desired activity so presence appears after reconnect.
+	if rm.desiredActivity != nil {
+		_ = c.SetActivity(rm.desiredActivity)
+	}
 	return nil
 }
 
@@ -104,6 +109,7 @@ func (rm *rpcManager) isConnected() bool {
 func (rm *rpcManager) setActivity(a *rpc.RichActivity) error {
 	rm.mu.Lock()
 	c := rm.client
+	rm.desiredActivity = a
 	rm.mu.Unlock()
 	if c == nil {
 		return fmt.Errorf("not connected")
@@ -114,6 +120,7 @@ func (rm *rpcManager) setActivity(a *rpc.RichActivity) error {
 func (rm *rpcManager) clearActivity() {
 	rm.mu.Lock()
 	c := rm.client
+	rm.desiredActivity = nil
 	rm.mu.Unlock()
 	if c != nil {
 		c.ClearActivity()
@@ -124,6 +131,7 @@ func (rm *rpcManager) close() {
 	rm.mu.Lock()
 	c := rm.client
 	rm.client = nil
+	rm.desiredActivity = nil
 	rm.mu.Unlock()
 	if c != nil {
 		c.ClearActivity()
@@ -142,12 +150,9 @@ func runDaemon(debug bool) int {
 	}
 
 	rpcMgr := newRPCManager(cfg.AppID)
-	if _, rpcErr := rpcNewClient(cfg.AppID); rpcErr != nil {
-		log.Printf("Warning: Cannot connect to Discord: %v", rpcErr)
+	if err := rpcMgr.connect(); err != nil {
+		log.Printf("Warning: Cannot connect to Discord: %v", err)
 		log.Println("Picord will run but Rich Presence won't work until Discord is available.")
-	} else {
-		// Best-effort initial connect; if it fails we rely on background reconnect.
-		_ = rpcMgr.connect()
 	}
 
 	state := server.NewAppState()
