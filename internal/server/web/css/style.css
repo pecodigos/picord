@@ -279,3 +279,82 @@ td.actions-cell {
   background: #e74c3c;
   color: #fff;
 }
+
+.catalog-search {
+  display: flex;
+  gap: 10px;
+  margin-bottom: 12px;
+}
+
+.catalog-search input {
+  flex: 1;
+  padding: 8px 12px;
+  background: #1a1a2e;
+  border: 1px solid #0f3460;
+  border-radius: 4px;
+  color: #e0e0e0;
+}
+
+.catalog-actions {
+  display: flex;
+  gap: 8px;
+  margin-bottom: 12px;
+  flex-wrap: wrap;
+}
+
+.catalog-results {
+  max-height: 300px;
+  overflow-y: auto;
+}
+
+.catalog-result-card {
+  background: #1a1a2e;
+  border: 1px solid #0f3460;
+  border-radius: 6px;
+  padding: 12px;
+  margin-bottom: 8px;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.catalog-result-card .info {
+  display: flex;
+  flex-direction: column;
+}
+
+.catalog-result-card .title {
+  font-weight: 500;
+  color: #e0e0e0;
+}
+
+.catalog-result-card .meta {
+  font-size: 0.8em;
+  color: #888;
+}
+
+.catalog-helper {
+  border: 1px dashed #0f3460;
+  padding: 10px;
+  border-radius: 6px;
+}
+
+.catalog-helper-row {
+  display: flex;
+  gap: 8px;
+  margin-bottom: 8px;
+}
+
+.catalog-helper-row input {
+  flex: 1;
+  padding: 6px 10px;
+  background: #1a1a2e;
+  border: 1px solid #0f3460;
+  border-radius: 4px;
+  color: #e0e0e0;
+}
+
+.catalog-helper-results {
+  max-height: 150px;
+  overflow-y: auto;
+}

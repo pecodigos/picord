@@ -16,6 +16,105 @@ async function refreshStatus() {
       `<tr><td>${p.pid ?? p.PID}</td><td>${p.name ?? p.Name}</td><td>${p.window_title || '-'}</td></tr>`
     ).join('');
   }
+
+  // Refresh catalog status in parallel
+  refreshCatalogStatus();
+}
+
+async function refreshCatalogStatus() {
+  try {
+    const cat = await get('/api/catalog/status');
+    document.getElementById('catalog-status').textContent = cat.enabled ? 'Enabled' : 'Disabled';
+    document.getElementById('catalog-entries').textContent = cat.enabled ? (cat.entry_count ?? '-') : '-';
+  } catch {
+    document.getElementById('catalog-status').textContent = 'Disabled';
+    document.getElementById('catalog-entries').textContent = '-';
+  }
+}
+
+async function searchCatalog() {
+  const query = document.getElementById('catalog-query').value.trim();
+  if (!query) return;
+  const results = await get('/api/catalog/search?q=' + encodeURIComponent(query));
+  renderCatalogResults(results, 'catalog-results');
+}
+
+function renderCatalogResults(results, containerId) {
+  const container = document.getElementById(containerId);
+  if (!results || results.length === 0) {
+    container.innerHTML = '<p style="color:#888">No results found.</p>';
+    return;
+  }
+  container.innerHTML = results.map(e => `
+    <div class="catalog-result-card">
+      <div class="info">
+        <span class="title">${e.title}</span>
+        <span class="meta">${e.source}${e.release_year ? ' · ' + e.release_year : ''}</span>
+      </div>
+      <div>
+        <button class="small" onclick="saveProfileFromCatalog('${e.id}')">Save Profile</button>
+      </div>
+    </div>
+  `).join('');
+}
+
+async function refreshCatalogSource(source) {
+  const btn = event.target;
+  const original = btn.textContent;
+  btn.textContent = 'Refreshing...';
+  btn.disabled = true;
+  try {
+    await post('/api/catalog/refresh', { source });
+    alert('Refreshed ' + source);
+    refreshCatalogStatus();
+  } catch (err) {
+    alert('Refresh failed: ' + err);
+  } finally {
+    btn.textContent = original;
+    btn.disabled = false;
+  }
+}
+
+async function saveProfileFromCatalog(entryId) {
+  try {
+    await post('/api/catalog/profiles/from-entry/' + encodeURIComponent(entryId), null);
+    alert('Profile saved from catalog entry');
+    refreshProfiles();
+  } catch (err) {
+    alert('Failed to save profile: ' + err);
+  }
+}
+
+async function saveProfileFromProcess(entryId) {
+  if (!entryId) return;
+  await saveProfileFromCatalog(entryId);
+}
+
+async function fillFromCatalogSearch() {
+  const query = document.getElementById('mf-catalog-search').value.trim();
+  if (!query) return;
+  const results = await get('/api/catalog/search?q=' + encodeURIComponent(query));
+  const container = document.getElementById('mf-catalog-results');
+  if (!results || results.length === 0) {
+    container.innerHTML = '<p style="color:#888;font-size:0.85em">No results.</p>';
+    return;
+  }
+  container.innerHTML = results.map(e => `
+    <div class="catalog-result-card" style="padding:8px;margin-bottom:4px;">
+      <div class="info">
+        <span class="title">${e.title}</span>
+        <span class="meta">${e.source}${e.release_year ? ' · ' + e.release_year : ''}</span>
+      </div>
+      <button class="small" onclick="fillProfileFromEntry('${e.title}', '${e.source}', '${e.id}')">Use</button>
+    </div>
+  `).join('');
+}
+
+function fillProfileFromEntry(title, source, entryId) {
+  document.getElementById('mf-name').value = title;
+  document.getElementById('mf-details').value = 'Playing ' + title;
+  document.getElementById('mf-large-text').value = title;
+  document.getElementById('mf-match-value').value = title.toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim();
 }
 
 async function refreshProfiles() {

@@ -32,6 +32,14 @@
         <span class="label">Override Active</span>
         <span class="value" id="override-status">No</span>
       </div>
+      <div class="status-item">
+        <span class="label">Catalog</span>
+        <span class="value" id="catalog-status">Disabled</span>
+      </div>
+      <div class="status-item">
+        <span class="label">Catalog Entries</span>
+        <span class="value" id="catalog-entries">-</span>
+      </div>
     </div>
     <div class="actions">
       <button onclick="toggleAutoDetect()" id="btn-auto-detect">Disable Auto-Detect</button>
@@ -44,6 +52,20 @@
       <thead><tr><th>PID</th><th>Process Name</th><th>Window Title</th></tr></thead>
       <tbody id="process-tbody"><tr><td colspan="3">No processes detected</td></tr></tbody>
     </table>
+  </section>
+
+  <section class="card" id="catalog-panel">
+    <h2>Catalog</h2>
+    <div class="catalog-search">
+      <input type="text" id="catalog-query" placeholder="Search catalog...">
+      <button onclick="searchCatalog()">Search</button>
+    </div>
+    <div class="catalog-actions">
+      <button onclick="refreshCatalogSource('steam_local')" class="small">Refresh Steam</button>
+      <button onclick="refreshCatalogSource('desktop')" class="small">Refresh Desktop</button>
+      <button onclick="refreshCatalogSource('lutris_public')" class="small">Refresh Lutris (opt-in)</button>
+    </div>
+    <div id="catalog-results" class="catalog-results"></div>
   </section>
 
   <section class="card" id="override-panel">
@@ -121,6 +143,14 @@
       <div class="form-row">
         <label>Name</label>
         <input type="text" id="mf-name" required>
+      </div>
+      <div class="form-row catalog-helper">
+        <label>Catalog Helper</label>
+        <div class="catalog-helper-row">
+          <input type="text" id="mf-catalog-search" placeholder="Search catalog for title...">
+          <button type="button" onclick="fillFromCatalogSearch()">Search</button>
+        </div>
+        <div id="mf-catalog-results" class="catalog-helper-results"></div>
       </div>
       <div class="form-row">
         <label>Match Type</label>
