@@ -495,6 +495,17 @@ Created `internal/rpc/client_test.go` with a mock Unix socket server implementin
 3. Add timestamps support (`start_time`) across config, GUI, CLI, and RPC payload.
 4. Keep README and HANDOFF updated as architecture changes.
 
+### Phase 4. Rich game catalog plan (next)
+A detailed implementation plan for Kimi K2.6 is saved at `docs/plans/2026-04-29-kimi-rich-game-catalog.md`.
+
+High-priority prerequisites identified by the plan:
+1. Fix Discord startup-order reconnect: if Discord is missing at daemon startup, `rpcClient` remains nil and current reconnect logic never creates a client later.
+2. Fix `profile.Manager` indexing: `byName map[string]*Profile` points into a mutable/sorted slice, which can leave stale or wrong pointers after append/sort/delete.
+3. Gate or remove all-process per-PID monitor logging before adding catalog detection; it can flood logs every poll.
+4. Validate Discord image behavior with a real client before relying on catalog image URLs in Rich Presence.
+
+The catalog plan favors local/installed metadata first, public metadata second, and lazy image caching: do not download every image or try to upload every game image to one Discord application.
+
 ---
 
 ## 12. Code Patterns
