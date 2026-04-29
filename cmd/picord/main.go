@@ -194,10 +194,11 @@ func runDaemon(debug bool) int {
 				ExternalEnabled: cfg.Images.ExternalValidated,
 			}
 			if cfg.Catalog.AutoRefresh {
-				sources, err := catalog.BuildSources(cfg.Catalog.Sources)
-				if err != nil {
-					log.Printf("Warning: invalid catalog sources: %v", err)
-				} else {
+				sources, skipped := catalog.BuildSources(cfg.Catalog.Sources)
+				for _, s := range skipped {
+					log.Printf("Warning: skipping unknown catalog source: %s", s)
+				}
+				if len(sources) > 0 {
 					catalogRefresher = catalog.NewRefresher(catalogStore, sources, time.Duration(cfg.Catalog.RefreshHours)*time.Hour)
 					catalogRefresher.Start()
 				}
@@ -205,17 +206,51 @@ func runDaemon(debug bool) int {
 		}
 	}
 
-	configMgr, configErr := config.NewManager(configPath, func(newCfg config.AppConfig) {
+	applyConfig := func(newCfg config.AppConfig, source string) {
+		// Restart-only fields: log a warning if they changed.
+		if newCfg.WebPort != cfg.WebPort {
+			log.Printf("[%s] web_port changed to %d (requires restart)", source, newCfg.WebPort)
+		}
+		if newCfg.PollInterval != cfg.PollInterval {
+			log.Printf("[%s] poll_interval changed to %d (requires restart)", source, newCfg.PollInterval)
+		}
+		if newCfg.AppID != cfg.AppID {
+			log.Printf("[%s] app_id changed (requires restart)", source)
+		}
+		if newCfg.ScanAllProcesses != cfg.ScanAllProcesses {
+			log.Printf("[%s] scan_all_processes changed to %v (requires restart)", source, newCfg.ScanAllProcesses)
+		}
+
 		cfg = newCfg
-		profileMgr.MergeUser(newCfg.Profiles)
+		profileMgr.ReplaceUser(newCfg.Profiles)
+
 		if catalogStore != nil {
 			imgResolver = catalog.ImageResolver{
 				Mode:            catalog.ImageMode(newCfg.Images.Mode),
 				GenericAssetKey: newCfg.Images.GenericAssetKey,
 				ExternalEnabled: newCfg.Images.ExternalValidated,
 			}
+			// Restart refresher if sources or interval changed.
+			if catalogRefresher != nil {
+				catalogRefresher.Stop()
+				catalogRefresher = nil
+			}
+			if newCfg.Catalog.AutoRefresh {
+				sources, skipped := catalog.BuildSources(newCfg.Catalog.Sources)
+				for _, s := range skipped {
+					log.Printf("[%s] skipping unknown catalog source: %s", source, s)
+				}
+				if len(sources) > 0 {
+					catalogRefresher = catalog.NewRefresher(catalogStore, sources, time.Duration(newCfg.Catalog.RefreshHours)*time.Hour)
+					catalogRefresher.Start()
+				}
+			}
 		}
-		log.Println("Config auto-reloaded")
+		log.Printf("[%s] Config reloaded", source)
+	}
+
+	configMgr, configErr := config.NewManager(configPath, func(newCfg config.AppConfig) {
+		applyConfig(newCfg, "watcher")
 	})
 	if configErr != nil {
 		log.Printf("Config watcher error: %v", configErr)
@@ -256,9 +291,7 @@ func runDaemon(debug bool) int {
 	webServer.OnReloadConfig = func() {
 		newCfg, err := config.Load(configPath)
 		if err == nil {
-			cfg = newCfg
-			profileMgr.MergeUser(newCfg.Profiles)
-			log.Println("Config reloaded from GUI")
+			applyConfig(newCfg, "gui")
 		}
 	}
 	webServer.OnProfilesSaved = func(profiles []profile.Profile) {
@@ -340,9 +373,7 @@ func runDaemon(debug bool) int {
 		ReloadConfig: func() {
 			newCfg, err := config.Load(configPath)
 			if err == nil {
-				cfg = newCfg
-				profileMgr.MergeUser(newCfg.Profiles)
-				log.Println("Config reloaded from tray")
+				applyConfig(newCfg, "tray")
 			}
 		},
 		SetAutoDetect: func(enabled bool) {

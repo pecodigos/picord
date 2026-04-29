@@ -2,7 +2,6 @@ package catalog
 
 import (
 	"context"
-	"fmt"
 	"log"
 	"sync"
 	"time"
@@ -108,9 +107,10 @@ func (r *Refresher) refreshAll() {
 
 // BuildSources creates source adapters from config source names.
 // Supported sources: steam_local, lutris_public, desktop.
-// lutris_local is not yet implemented.
-func BuildSources(sourceNames []string) ([]Source, error) {
+// Unknown or legacy sources (e.g., lutris_local) are skipped with a warning.
+func BuildSources(sourceNames []string) ([]Source, []string) {
 	var sources []Source
+	var skipped []string
 	for _, name := range sourceNames {
 		switch name {
 		case "steam_local":
@@ -120,8 +120,8 @@ func BuildSources(sourceNames []string) ([]Source, error) {
 		case "desktop":
 			sources = append(sources, &DesktopSource{})
 		default:
-			return nil, fmt.Errorf("unknown catalog source: %s", name)
+			skipped = append(skipped, name)
 		}
 	}
-	return sources, nil
+	return sources, skipped
 }

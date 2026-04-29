@@ -64,9 +64,9 @@ func TestRefresher_StopWaits(t *testing.T) {
 }
 
 func TestBuildSources(t *testing.T) {
-	sources, err := BuildSources([]string{"steam_local", "desktop"})
-	if err != nil {
-		t.Fatalf("BuildSources failed: %v", err)
+	sources, skipped := BuildSources([]string{"steam_local", "desktop"})
+	if len(skipped) > 0 {
+		t.Fatalf("unexpected skipped sources: %v", skipped)
 	}
 	if len(sources) != 2 {
 		t.Fatalf("expected 2 sources, got %d", len(sources))
@@ -79,17 +79,20 @@ func TestBuildSources(t *testing.T) {
 	}
 }
 
-func TestBuildSources_Unknown(t *testing.T) {
-	_, err := BuildSources([]string{"unknown"})
-	if err == nil {
-		t.Fatal("expected error for unknown source")
+func TestBuildSources_UnknownSkipped(t *testing.T) {
+	sources, skipped := BuildSources([]string{"unknown"})
+	if len(sources) != 0 {
+		t.Fatalf("expected 0 sources, got %d", len(sources))
+	}
+	if len(skipped) != 1 || skipped[0] != "unknown" {
+		t.Errorf("expected unknown skipped, got %v", skipped)
 	}
 }
 
 func TestBuildSources_DefaultConfig(t *testing.T) {
-	sources, err := BuildSources(config.DefaultCatalogSources)
-	if err != nil {
-		t.Fatalf("BuildSources with DefaultCatalogSources failed: %v", err)
+	sources, skipped := BuildSources(config.DefaultCatalogSources)
+	if len(skipped) > 0 {
+		t.Fatalf("unexpected skipped sources: %v", skipped)
 	}
 	if len(sources) == 0 {
 		t.Fatal("expected at least one source from default config")
