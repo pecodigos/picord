@@ -270,6 +270,36 @@ func (c *Client) ClearActivity() error {
 	return c.SetActivity(nil)
 }
 
+func (c *Client) Reconnect() error {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+
+	if c.conn != nil {
+		c.conn.Close()
+		c.conn = nil
+	}
+
+	socket, err := DiscoverSocket()
+	if err != nil {
+		return fmt.Errorf("socket discovery: %w", err)
+	}
+
+	conn, err := net.DialTimeout("unix", socket, 5*time.Second)
+	if err != nil {
+		return fmt.Errorf("dial socket %s: %w", socket, err)
+	}
+
+	c.conn = conn
+	c.closed = false
+	return c.handshake()
+}
+
+func (c *Client) IsConnected() bool {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	return c.conn != nil && !c.closed
+}
+
 func (c *Client) Close() error {
 	c.mu.Lock()
 	defer c.mu.Unlock()

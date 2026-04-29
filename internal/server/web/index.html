@@ -41,8 +41,8 @@
   <section class="card" id="processes-panel">
     <h2>Detected Processes</h2>
     <table id="process-table">
-      <thead><tr><th>PID</th><th>Process Name</th></tr></thead>
-      <tbody id="process-tbody"><tr><td colspan="2">No processes detected</td></tr></tbody>
+      <thead><tr><th>PID</th><th>Process Name</th><th>Window Title</th></tr></thead>
+      <tbody id="process-tbody"><tr><td colspan="3">No processes detected</td></tr></tbody>
     </table>
   </section>
 
@@ -126,6 +126,7 @@
         <label>Match Type</label>
         <select id="mf-match-type">
           <option value="process_name">Process Name</option>
+          <option value="window_title">Window Title</option>
           <option value="regex">Regex</option>
         </select>
       </div>

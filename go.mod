@@ -1,6 +1,6 @@
 module github.com/pecodigos/picord
 
-go 1.26.2
+go 1.21
 
 require (
 	github.com/energye/systray v1.0.3

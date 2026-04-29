@@ -43,7 +43,11 @@ func (m *Manager) MergeDefaults(defaults []Profile) {
 func (m *Manager) MergeUser(user []Profile) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
+	m.mergeUserUnlocked(user)
+	m.sortByPriority()
+}
 
+func (m *Manager) mergeUserUnlocked(user []Profile) {
 	for i := range user {
 		name := user[i].Name
 		if existing, ok := m.byName[name]; ok {
@@ -57,7 +61,6 @@ func (m *Manager) MergeUser(user []Profile) {
 			}
 		}
 	}
-	m.sortByPriority()
 }
 
 func (m *Manager) ReplaceUser(profiles []Profile) {
@@ -78,7 +81,7 @@ func (m *Manager) ReplaceUser(profiles []Profile) {
 		m.byName[m.profiles[i].Name] = &m.profiles[i]
 	}
 
-	m.MergeUser(profiles)
+	m.mergeUserUnlocked(profiles)
 	m.sortByPriority()
 }
 

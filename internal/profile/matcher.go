@@ -7,8 +7,9 @@ import (
 )
 
 type DetectedProcess struct {
-	PID  int
-	Name string
+	PID         int
+	Name        string
+	WindowTitle string `json:"window_title,omitempty"`
 }
 
 func (p Profile) Matches(proc DetectedProcess) int {
@@ -27,6 +28,9 @@ func (p Profile) Matches(proc DetectedProcess) int {
 		return -1
 
 	case MatchWindowTitle:
+		if strings.Contains(strings.ToLower(proc.WindowTitle), matchVal) {
+			return p.Priority
+		}
 		return -1
 
 	case MatchRegex:

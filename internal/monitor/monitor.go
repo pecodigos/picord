@@ -2,6 +2,7 @@ package monitor
 
 import (
 	"fmt"
+	"log"
 	"os"
 	"path/filepath"
 	"strings"
@@ -9,6 +10,8 @@ import (
 
 	"github.com/pecodigos/picord/internal/profile"
 )
+
+var procRoot = "/proc"
 
 type Monitor struct {
 	interval time.Duration
@@ -42,6 +45,12 @@ func (m *Monitor) loop() {
 			return
 		case <-ticker.C:
 			procs := scan()
+			if len(procs) > 0 {
+				log.Printf("[monitor] detected %d process(es) with Discord IPC", len(procs))
+				for _, p := range procs {
+					log.Printf("[monitor]   PID=%d Name=%q WindowTitle=%q", p.PID, p.Name, p.WindowTitle)
+				}
+			}
 			if m.callback != nil {
 				m.callback(procs)
 			}
@@ -57,7 +66,9 @@ func scan() []profile.DetectedProcess {
 	seen := make(map[int]bool)
 	var processes []profile.DetectedProcess
 
-	procDir, err := os.Open("/proc")
+	windowTitles, _ := GetWindowTitles()
+
+	procDir, err := os.Open(procRoot)
 	if err != nil {
 		return processes
 	}
@@ -74,7 +85,7 @@ func scan() []profile.DetectedProcess {
 			continue
 		}
 
-		fdDir, err := os.Open(fmt.Sprintf("/proc/%d/fd", pid))
+		fdDir, err := os.Open(filepath.Join(procRoot, entry, "fd"))
 		if err != nil {
 			continue
 		}
@@ -87,7 +98,7 @@ func scan() []profile.DetectedProcess {
 
 		connected := false
 		for _, fd := range fdEntries {
-			link, err := os.Readlink(filepath.Join("/proc", entry, "fd", fd))
+			link, err := os.Readlink(filepath.Join(procRoot, entry, "fd", fd))
 			if err != nil {
 				continue
 			}
@@ -108,8 +119,9 @@ func scan() []profile.DetectedProcess {
 
 		name := readProcName(pid)
 		processes = append(processes, profile.DetectedProcess{
-			PID:  pid,
-			Name: name,
+			PID:         pid,
+			Name:        name,
+			WindowTitle: windowTitles[pid],
 		})
 	}
 
@@ -117,7 +129,23 @@ func scan() []profile.DetectedProcess {
 }
 
 func readProcName(pid int) string {
-	data, err := os.ReadFile(fmt.Sprintf("/proc/%d/comm", pid))
+	procPath := filepath.Join(procRoot, fmt.Sprintf("%d", pid))
+
+	// Try cmdline first (full path, not truncated)
+	cmdline, err := os.ReadFile(filepath.Join(procPath, "cmdline"))
+	if err == nil && len(cmdline) > 0 {
+		// cmdline is null-separated; first element is the executable
+		parts := strings.Split(string(cmdline), "\x00")
+		if len(parts) > 0 && parts[0] != "" {
+			base := filepath.Base(parts[0])
+			if base != "" {
+				return base
+			}
+		}
+	}
+
+	// Fallback to comm (kernel thread name, max 15 chars)
+	data, err := os.ReadFile(filepath.Join(procPath, "comm"))
 	if err != nil {
 		return "unknown"
 	}
