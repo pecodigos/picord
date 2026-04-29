@@ -51,6 +51,37 @@ func TestScan_NoDiscordProcesses(t *testing.T) {
 	}
 }
 
+func TestScan_AllProcessesIncludesNonDiscordProcesses(t *testing.T) {
+	root := setupMockProc(t)
+	createMockProcess(t, root, 1000, "firefox", false)
+	createMockProcess(t, root, 2000, "steam", true)
+
+	procs := scanProcesses(true)
+	if len(procs) != 2 {
+		t.Fatalf("expected 2 total processes, got %d", len(procs))
+	}
+
+	names := make(map[string]bool)
+	for _, p := range procs {
+		names[p.Name] = true
+	}
+	if !names["firefox"] || !names["steam"] {
+		t.Errorf("expected firefox and steam, got %+v", procs)
+	}
+}
+
+func TestMonitor_ScanNowHonorsScanAllOption(t *testing.T) {
+	root := setupMockProc(t)
+	createMockProcess(t, root, 1000, "firefox", false)
+	createMockProcess(t, root, 2000, "steam", true)
+
+	m := NewWithOptions(1, true, nil)
+	procs := m.ScanNow()
+	if len(procs) != 2 {
+		t.Fatalf("expected scan-all monitor to return 2 processes, got %d", len(procs))
+	}
+}
+
 func TestScan_OneDiscordProcess(t *testing.T) {
 	root := setupMockProc(t)
 	createMockProcess(t, root, 1000, "firefox", false)

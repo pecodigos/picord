@@ -15,13 +15,19 @@ var procRoot = "/proc"
 
 type Monitor struct {
 	interval time.Duration
+	scanAll  bool
 	stopCh   chan struct{}
 	callback func([]profile.DetectedProcess)
 }
 
 func New(intervalSec int, callback func([]profile.DetectedProcess)) *Monitor {
+	return NewWithOptions(intervalSec, false, callback)
+}
+
+func NewWithOptions(intervalSec int, scanAll bool, callback func([]profile.DetectedProcess)) *Monitor {
 	return &Monitor{
 		interval: time.Duration(intervalSec) * time.Second,
+		scanAll:  scanAll,
 		stopCh:   make(chan struct{}),
 		callback: callback,
 	}
@@ -44,9 +50,13 @@ func (m *Monitor) loop() {
 		case <-m.stopCh:
 			return
 		case <-ticker.C:
-			procs := scan()
+			procs := m.ScanNow()
 			if len(procs) > 0 {
-				log.Printf("[monitor] detected %d process(es) with Discord IPC", len(procs))
+				if m.scanAll {
+					log.Printf("[monitor] detected %d process(es)", len(procs))
+				} else {
+					log.Printf("[monitor] detected %d process(es) with Discord IPC", len(procs))
+				}
 				for _, p := range procs {
 					log.Printf("[monitor]   PID=%d Name=%q WindowTitle=%q", p.PID, p.Name, p.WindowTitle)
 				}
@@ -59,10 +69,14 @@ func (m *Monitor) loop() {
 }
 
 func (m *Monitor) ScanNow() []profile.DetectedProcess {
-	return scan()
+	return scanProcesses(m.scanAll)
 }
 
 func scan() []profile.DetectedProcess {
+	return scanProcesses(false)
+}
+
+func scanProcesses(scanAll bool) []profile.DetectedProcess {
 	seen := make(map[int]bool)
 	var processes []profile.DetectedProcess
 
@@ -85,29 +99,7 @@ func scan() []profile.DetectedProcess {
 			continue
 		}
 
-		fdDir, err := os.Open(filepath.Join(procRoot, entry, "fd"))
-		if err != nil {
-			continue
-		}
-
-		fdEntries, err := fdDir.Readdirnames(-1)
-		fdDir.Close()
-		if err != nil {
-			continue
-		}
-
-		connected := false
-		for _, fd := range fdEntries {
-			link, err := os.Readlink(filepath.Join(procRoot, entry, "fd", fd))
-			if err != nil {
-				continue
-			}
-			if strings.Contains(link, "discord-ipc") {
-				connected = true
-				break
-			}
-		}
-
+		connected := scanAll || processHasDiscordIPC(entry)
 		if !connected {
 			continue
 		}
@@ -126,6 +118,31 @@ func scan() []profile.DetectedProcess {
 	}
 
 	return processes
+}
+
+func processHasDiscordIPC(entry string) bool {
+	fdDir, err := os.Open(filepath.Join(procRoot, entry, "fd"))
+	if err != nil {
+		return false
+	}
+
+	fdEntries, err := fdDir.Readdirnames(-1)
+	fdDir.Close()
+	if err != nil {
+		return false
+	}
+
+	for _, fd := range fdEntries {
+		link, err := os.Readlink(filepath.Join(procRoot, entry, "fd", fd))
+		if err != nil {
+			continue
+		}
+		if strings.Contains(link, "discord-ipc") {
+			return true
+		}
+	}
+
+	return false
 }
 
 func readProcName(pid int) string {
