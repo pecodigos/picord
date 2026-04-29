@@ -202,7 +202,7 @@ func runDaemon(debug bool) int {
 		log.Printf("Config watcher error: %v", configErr)
 	}
 
-	webServer := server.New(state, profileMgr)
+	webServer := server.New(state, profileMgr, catalogStore)
 	webServer.OnOverrideSet = func(p *profile.Profile) {
 		state.SetOverride(p)
 		if p != nil {

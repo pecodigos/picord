@@ -26,13 +26,15 @@ func runCLI(args []string, debug bool) int {
 	case "status":
 		return cmdStatus()
 	case "profiles":
-		return cmdProfiles()
+		return cmdProfiles(args[1:])
 	case "override":
 		return cmdOverride(args[1:])
 	case "clear":
 		return cmdClear()
 	case "reload":
 		return cmdReload()
+	case "catalog":
+		return cmdCatalog(args[1:])
 	case "help", "-h", "--help":
 		printUsage()
 		return 0
@@ -49,10 +51,11 @@ func printUsage() {
 Commands:
   run              Run the daemon (default if no command given)
   status           Show current presence status
-  profiles         List all profiles
+  profiles         List all profiles or create from catalog
   override         Set a manual override
   clear            Clear manual override
   reload           Reload configuration from disk
+  catalog          Catalog management (status, search, refresh)
   help             Show this help message
 
 Override options:
@@ -60,6 +63,14 @@ Override options:
   -d, --details    Activity details
   -s, --state      Activity state
   -i, --image      Large image key
+
+Catalog commands:
+  picord catalog status
+  picord catalog search <query>
+  picord catalog refresh --source <source> [--max-pages N]
+
+Profile commands:
+  picord profile from-catalog <entry-id>
 `)
 }
 
@@ -160,34 +171,6 @@ func cmdStatus() int {
 	return 0
 }
 
-func cmdProfiles() int {
-	resp, err := apiGet("/api/profiles")
-	if err != nil {
-		fmt.Fprintf(os.Stderr, "Cannot connect to picord daemon: %v\n", err)
-		return 1
-	}
-	defer resp.Body.Close()
-
-	var profiles []profile.Profile
-	if err := json.NewDecoder(resp.Body).Decode(&profiles); err != nil {
-		fmt.Fprintf(os.Stderr, "Error decoding response: %v\n", err)
-		return 1
-	}
-
-	if len(profiles) == 0 {
-		fmt.Println("No user profiles configured.")
-		return 0
-	}
-
-	w := tabwriter.NewWriter(os.Stdout, 0, 0, 2, ' ', 0)
-	fmt.Fprintln(w, "NAME\tTYPE\tMATCH\tPRIORITY\tENABLED")
-	for _, p := range profiles {
-		fmt.Fprintf(w, "%s\t%s\t%s\t%d\t%v\n", p.Name, p.Match.Type, p.Match.Value, p.Priority, p.Enabled)
-	}
-	w.Flush()
-	return 0
-}
-
 func cmdOverride(args []string) int {
 	fs := flag.NewFlagSet("override", flag.ExitOnError)
 	name := fs.String("n", "", "Profile name")
@@ -245,6 +228,133 @@ func cmdClear() int {
 
 func cmdReload() int {
 	resp, err := apiPost("/api/reload", nil)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "Cannot connect to picord daemon: %v\n", err)
+		return 1
+	}
+	printResponse(resp)
+	return 0
+}
+
+func cmdCatalog(args []string) int {
+	if len(args) == 0 {
+		fmt.Fprintln(os.Stderr, "Error: catalog subcommand required")
+		fmt.Fprintln(os.Stderr, "Usage: picord catalog status|search|refresh")
+		return 1
+	}
+	switch args[0] {
+	case "status":
+		return cmdCatalogStatus()
+	case "search":
+		if len(args) < 2 {
+			fmt.Fprintln(os.Stderr, "Error: search query required")
+			return 1
+		}
+		return cmdCatalogSearch(args[1])
+	case "refresh":
+		return cmdCatalogRefresh(args[1:])
+	default:
+		fmt.Fprintf(os.Stderr, "Unknown catalog subcommand: %s\n", args[0])
+		return 1
+	}
+}
+
+func cmdCatalogStatus() int {
+	resp, err := apiGet("/api/catalog/status")
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "Cannot connect to picord daemon: %v\n", err)
+		return 1
+	}
+	defer resp.Body.Close()
+	body, _ := io.ReadAll(resp.Body)
+	fmt.Println(string(body))
+	return 0
+}
+
+func cmdCatalogSearch(query string) int {
+	resp, err := apiGet("/api/catalog/search?q=" + query)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "Cannot connect to picord daemon: %v\n", err)
+		return 1
+	}
+	defer resp.Body.Close()
+	body, _ := io.ReadAll(resp.Body)
+	fmt.Println(string(body))
+	return 0
+}
+
+func cmdCatalogRefresh(args []string) int {
+	fs := flag.NewFlagSet("refresh", flag.ExitOnError)
+	source := fs.String("source", "", "Source to refresh (steam_local, lutris_public, desktop)")
+	maxPages := fs.Int("max-pages", 0, "Max pages to fetch (for paginated sources)")
+	fs.Parse(args)
+
+	// Manual long flag support
+	for i := 0; i < len(args); i++ {
+		switch args[i] {
+		case "--source":
+			if i+1 < len(args) { *source = args[i+1]; i++ }
+		case "--max-pages":
+			if i+1 < len(args) {
+				if v, err := fmt.Sscanf(args[i+1], "%d", maxPages); v == 1 && err == nil {
+					i++
+				}
+			}
+		}
+	}
+
+	if *source == "" {
+		fmt.Fprintln(os.Stderr, "Error: --source is required")
+		return 1
+	}
+
+	reqBody := map[string]any{"source": *source}
+	if *maxPages > 0 {
+		reqBody["max_pages"] = *maxPages
+	}
+	resp, err := apiPost("/api/catalog/refresh", reqBody)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "Cannot connect to picord daemon: %v\n", err)
+		return 1
+	}
+	printResponse(resp)
+	return 0
+}
+
+func cmdProfiles(args []string) int {
+	if len(args) >= 2 && args[0] == "from-catalog" {
+		return cmdProfileFromCatalog(args[1])
+	}
+
+	resp, err := apiGet("/api/profiles")
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "Cannot connect to picord daemon: %v\n", err)
+		return 1
+	}
+	defer resp.Body.Close()
+
+	var profiles []profile.Profile
+	if err := json.NewDecoder(resp.Body).Decode(&profiles); err != nil {
+		fmt.Fprintf(os.Stderr, "Error decoding response: %v\n", err)
+		return 1
+	}
+
+	if len(profiles) == 0 {
+		fmt.Println("No user profiles configured.")
+		return 0
+	}
+
+	w := tabwriter.NewWriter(os.Stdout, 0, 0, 2, ' ', 0)
+	fmt.Fprintln(w, "NAME\tTYPE\tMATCH\tPRIORITY\tENABLED")
+	for _, p := range profiles {
+		fmt.Fprintf(w, "%s\t%s\t%s\t%d\t%v\n", p.Name, p.Match.Type, p.Match.Value, p.Priority, p.Enabled)
+	}
+	w.Flush()
+	return 0
+}
+
+func cmdProfileFromCatalog(entryID string) int {
+	resp, err := apiPost("/api/catalog/profiles/from-entry/"+entryID, nil)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "Cannot connect to picord daemon: %v\n", err)
 		return 1

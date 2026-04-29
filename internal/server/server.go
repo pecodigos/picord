@@ -9,6 +9,7 @@ import (
 	"strings"
 	"sync"
 
+	"github.com/pecodigos/picord/internal/catalog"
 	"github.com/pecodigos/picord/internal/profile"
 )
 
@@ -77,12 +78,13 @@ func (s *AppState) SetOverride(p *profile.Profile) {
 type Server struct {
 	state          *AppState
 	profileManager *profile.Manager
+	catalogStore   *catalog.Store
 
-	OnOverrideSet    func(*profile.Profile)
-	OnOverrideClear  func()
-	OnAutoDetectSet  func(bool)
-	OnReloadConfig   func()
-	OnProfilesSaved  func([]profile.Profile)
+	OnOverrideSet   func(*profile.Profile)
+	OnOverrideClear func()
+	OnAutoDetectSet func(bool)
+	OnReloadConfig  func()
+	OnProfilesSaved func([]profile.Profile)
 }
 
 type statusResponse struct {
@@ -93,10 +95,11 @@ type statusResponse struct {
 	HasOverride   bool                      `json:"has_override"`
 }
 
-func New(s *AppState, pm *profile.Manager) *Server {
+func New(s *AppState, pm *profile.Manager, cs *catalog.Store) *Server {
 	return &Server{
 		state:          s,
 		profileManager: pm,
+		catalogStore:   cs,
 	}
 }
 
@@ -113,6 +116,12 @@ func (srv *Server) Handler() http.Handler {
 	mux.HandleFunc("/api/override", srv.handleOverride)
 	mux.HandleFunc("/api/settings", srv.handleSettings)
 	mux.HandleFunc("/api/reload", srv.handleReload)
+
+	mux.HandleFunc("/api/catalog/status", srv.handleCatalogStatus)
+	mux.HandleFunc("/api/catalog/search", srv.handleCatalogSearch)
+	mux.HandleFunc("/api/catalog/entries/", srv.handleCatalogEntry)
+	mux.HandleFunc("/api/catalog/refresh", srv.handleCatalogRefresh)
+	mux.HandleFunc("/api/catalog/profiles/from-entry/", srv.handleCatalogProfileFromEntry)
 
 	return withCORS(mux)
 }
@@ -295,6 +304,162 @@ func (srv *Server) notifyProfilesChanged() {
 		}
 	}
 	srv.OnProfilesSaved(userProfiles)
+}
+
+func (srv *Server) handleCatalogStatus(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		http.Error(w, "method not allowed", 405)
+		return
+	}
+	if srv.catalogStore == nil {
+		writeJSON(w, map[string]any{"enabled": false})
+		return
+	}
+	ctx := r.Context()
+	entryCount, _ := srv.catalogStore.CountEntries(ctx)
+	aliasCount, _ := srv.catalogStore.CountAliases(ctx)
+	writeJSON(w, map[string]any{
+		"enabled":       true,
+		"entry_count":   entryCount,
+		"alias_count":   aliasCount,
+	})
+}
+
+func (srv *Server) handleCatalogSearch(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		http.Error(w, "method not allowed", 405)
+		return
+	}
+	if srv.catalogStore == nil {
+		writeError(w, "catalog disabled", 503)
+		return
+	}
+	q := r.URL.Query().Get("q")
+	if q == "" {
+		writeError(w, "missing q parameter", 400)
+		return
+	}
+	results, err := srv.catalogStore.SearchAll(r.Context(), q)
+	if err != nil {
+		writeError(w, err.Error(), 500)
+		return
+	}
+	writeJSON(w, results)
+}
+
+func (srv *Server) handleCatalogEntry(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		http.Error(w, "method not allowed", 405)
+		return
+	}
+	if srv.catalogStore == nil {
+		writeError(w, "catalog disabled", 503)
+		return
+	}
+	id := strings.TrimPrefix(r.URL.Path, "/api/catalog/entries/")
+	if id == "" {
+		writeError(w, "entry id required", 400)
+		return
+	}
+	entry, err := srv.catalogStore.GetEntry(r.Context(), id)
+	if err != nil {
+		writeError(w, err.Error(), 500)
+		return
+	}
+	if entry == nil {
+		http.Error(w, "not found", 404)
+		return
+	}
+	writeJSON(w, entry)
+}
+
+type refreshRequest struct {
+	Source   string   `json:"source"`
+	MaxPages int      `json:"max_pages"`
+	Roots    []string `json:"roots,omitempty"`
+}
+
+func (srv *Server) handleCatalogRefresh(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		http.Error(w, "method not allowed", 405)
+		return
+	}
+	if srv.catalogStore == nil {
+		writeError(w, "catalog disabled", 503)
+		return
+	}
+	var req refreshRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		writeError(w, "invalid JSON", 400)
+		return
+	}
+	if req.Source == "" {
+		writeError(w, "source is required", 400)
+		return
+	}
+
+	var src catalog.Source
+	switch req.Source {
+	case "steam_local":
+		src = &catalog.SteamLocalSource{SteamPaths: req.Roots}
+	case "lutris_public":
+		src = &catalog.LutrisPublicSource{}
+	case "desktop":
+		src = &catalog.DesktopSource{Roots: req.Roots}
+	default:
+		writeError(w, "unknown source", 400)
+		return
+	}
+
+	opts := catalog.RefreshOptions{MaxPages: req.MaxPages}
+	if err := src.Refresh(r.Context(), srv.catalogStore, opts); err != nil {
+		writeError(w, err.Error(), 500)
+		return
+	}
+	writeJSON(w, map[string]string{"status": "ok"})
+}
+
+func (srv *Server) handleCatalogProfileFromEntry(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		http.Error(w, "method not allowed", 405)
+		return
+	}
+	if srv.catalogStore == nil {
+		writeError(w, "catalog disabled", 503)
+		return
+	}
+	id := strings.TrimPrefix(r.URL.Path, "/api/catalog/profiles/from-entry/")
+	if id == "" {
+		writeError(w, "entry id required", 400)
+		return
+	}
+	entry, err := srv.catalogStore.GetEntry(r.Context(), id)
+	if err != nil {
+		writeError(w, err.Error(), 500)
+		return
+	}
+	if entry == nil {
+		http.Error(w, "not found", 404)
+		return
+	}
+
+	p := profile.Profile{
+		Name: entry.Title,
+		Match: profile.MatchRule{
+			Type:  profile.MatchProcessName,
+			Value: catalog.NormalizeTitle(entry.Title),
+		},
+		Activity: profile.Activity{
+			Details:    "Playing " + entry.Title,
+			LargeImage: "",
+			LargeText:  entry.Title,
+		},
+		Priority: 10,
+		Enabled:  true,
+	}
+	srv.profileManager.Add(p)
+	srv.notifyProfilesChanged()
+	writeJSON(w, map[string]string{"status": "ok"})
 }
 
 func writeJSON(w http.ResponseWriter, data any) {
