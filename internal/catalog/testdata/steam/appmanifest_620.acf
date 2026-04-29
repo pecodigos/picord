@@ -1,0 +1,38 @@
+"AppState"
+{
+	"appid"		"620"
+	"Universe"		"1"
+	"name"		"Portal 2"
+	"StateFlags"		"4"
+	"installdir"		"Portal 2"
+	"LastUpdated"		"1609459200"
+	"SizeOnDisk"		"7810000000"
+	"StagingSize"		"0"
+	"buildid"		"12345678"
+	"LastOwner"		"12345678901234567"
+	"UpdateResult"		"0"
+	"BytesToDownload"		"0"
+	"BytesDownloaded"		"0"
+	"BytesToStage"		"0"
+	"BytesStaged"		"0"
+	"TargetBuildID"		"12345678"
+	"AutoUpdateBehavior"		"0"
+	"AllowOtherDownloadsWhileRunning"		"0"
+	"ScheduledAutoUpdate"		"0"
+	"InstalledDepots"
+	{
+		"620"
+		{
+			"manifest"		"1111111111111111111"
+			"size"		"7810000000"
+		}
+	}
+	"UserConfig"
+	{
+		"language"		"english"
+	}
+	"MountedConfig"
+	{
+		"language"		"english"
+	}
+}

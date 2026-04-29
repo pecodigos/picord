@@ -1,0 +1,21 @@
+{
+  "count": 337000,
+  "next": "https://lutris.net/api/games?page=2",
+  "previous": null,
+  "results": [
+    {
+      "id": 12345,
+      "name": "Hollow Knight",
+      "slug": "hollow-knight",
+      "year": 2017,
+      "banner_url": "https://lutris.net/games/banner/hollow-knight.jpg"
+    },
+    {
+      "id": 12346,
+      "name": "Portal 2",
+      "slug": "portal-2",
+      "year": 2011,
+      "banner_url": "https://lutris.net/games/banner/portal-2.jpg"
+    }
+  ]
+}

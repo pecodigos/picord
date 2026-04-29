@@ -1,0 +1,7 @@
+[Desktop Entry]
+Name=Sample Application
+Exec=/usr/bin/sample-app %U
+Icon=sample-app
+Type=Application
+Categories=Game;ActionGame;
+StartupWMClass=SampleApp
