@@ -5,7 +5,7 @@
 > **Go:** 1.21+  
 > **Status:** Builds; `go test -count=1 ./...`, `go vet ./...`, `go test -race ./...`, `make build`, and diff checks pass after Kimi's second stabilization pass. Latest next-step plan: `docs/plans/2026-04-29-post-kimi-followup-stabilization.md`.
 >
-> **Resolved in latest commit:** `setRichPresence` now stores desired activity even when Discord is disconnected (replayed on reconnect). Write endpoints enforce same-origin/localhost for unsafe methods. Profile edits preserve `Enabled` state.
+> **Resolved:** All P0/P1 items from the post-Kimi stabilization plan are complete. Catalog auto-detection works at runtime. Presence is stored and replayed on reconnect. Socket discovery is fixed. Write endpoints reject cross-origin mutating requests. Profile edits preserve `Enabled` state. Catalog candidates are ranked against broad launcher profiles. `external_url` image mode is gated behind `images.external_validated`.
 
 ---
 
@@ -15,7 +15,7 @@ Picord is a Linux daemon that auto-sets Discord Rich Presence. By default it sca
 
 **Current constraint:** Picord still needs a running Discord client and a valid Discord application client ID before it can publish Rich Presence. The scanner no longer depends on games opening Discord IPC sockets.
 
-**Follow-up resolved:** `setRichPresence` now stores desired activity even when Discord is disconnected (replayed on reconnect). Write endpoints reject cross-origin mutating requests. Profile edits preserve `Enabled` state. Remaining: catalog-vs-profile ranking for broad launcher profiles, live Discord external-image validation. See `docs/plans/2026-04-29-post-kimi-followup-stabilization.md`.
+**Current status:** All stabilization plan items are implemented and tested. The catalog feature is now dependable in real daemon runtime. See `docs/plans/2026-04-29-post-kimi-followup-stabilization.md` for history.
 
 ---
 
