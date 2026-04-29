@@ -69,6 +69,15 @@ func TestLoad_DefaultsOnMissingFile(t *testing.T) {
 	if !cfg.ScanAllProcesses {
 		t.Error("expected default scan_all_processes to be true")
 	}
+	if !cfg.Catalog.Enabled {
+		t.Error("expected default catalog.enabled to be true")
+	}
+	if cfg.Images.Mode != "generic" {
+		t.Errorf("expected default images.mode generic, got %q", cfg.Images.Mode)
+	}
+	if cfg.Images.GenericAssetKey != "picord_game" {
+		t.Errorf("expected default images.generic_asset_key picord_game, got %q", cfg.Images.GenericAssetKey)
+	}
 }
 
 func TestLoad_PartialConfigKeepsScanAllDefault(t *testing.T) {

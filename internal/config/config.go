@@ -12,12 +12,28 @@ import (
 	"github.com/pecodigos/picord/internal/profile"
 )
 
+type CatalogConfig struct {
+	Enabled      bool     `yaml:"enabled" json:"enabled"`
+	AutoRefresh  bool     `yaml:"auto_refresh" json:"auto_refresh"`
+	Sources      []string `yaml:"sources" json:"sources"`
+	RefreshHours int      `yaml:"refresh_hours" json:"refresh_hours"`
+}
+
+type ImageConfig struct {
+	Mode            string `yaml:"mode" json:"mode"`
+	CacheEnabled    bool   `yaml:"cache_enabled" json:"cache_enabled"`
+	MaxCacheMB      int    `yaml:"max_cache_mb" json:"max_cache_mb"`
+	GenericAssetKey string `yaml:"generic_asset_key" json:"generic_asset_key"`
+}
+
 type AppConfig struct {
 	AppID            string            `yaml:"app_id" json:"app_id"`
 	PollInterval     int               `yaml:"poll_interval" json:"poll_interval"`
 	WebPort          int               `yaml:"web_port" json:"web_port"`
 	ScanAllProcesses bool              `yaml:"scan_all_processes" json:"scan_all_processes"`
 	Profiles         []profile.Profile `yaml:"profiles" json:"profiles"`
+	Catalog          CatalogConfig     `yaml:"catalog" json:"catalog"`
+	Images           ImageConfig       `yaml:"images" json:"images"`
 }
 
 var defaultConfig = AppConfig{
@@ -26,6 +42,18 @@ var defaultConfig = AppConfig{
 	WebPort:          17970,
 	ScanAllProcesses: true,
 	Profiles:         []profile.Profile{},
+	Catalog: CatalogConfig{
+		Enabled:      true,
+		AutoRefresh:  true,
+		Sources:      []string{"steam_local", "lutris_local", "desktop"},
+		RefreshHours: 24,
+	},
+	Images: ImageConfig{
+		Mode:            "generic",
+		CacheEnabled:    true,
+		MaxCacheMB:      512,
+		GenericAssetKey: "picord_game",
+	},
 }
 
 type Manager struct {

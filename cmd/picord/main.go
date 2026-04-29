@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"fmt"
 	"io"
 	"log"
@@ -12,6 +13,7 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/pecodigos/picord/internal/catalog"
 	"github.com/pecodigos/picord/internal/config"
 	"github.com/pecodigos/picord/internal/monitor"
 	"github.com/pecodigos/picord/internal/profile"
@@ -156,9 +158,44 @@ func runDaemon(debug bool) int {
 
 	var currentProfile *profile.Profile
 
+	// Open catalog store if enabled.
+	var catalogStore *catalog.Store
+	var catalogMatcher *catalog.Matcher
+	var imgResolver catalog.ImageResolver
+	if cfg.Catalog.Enabled {
+		dataDir := os.Getenv("XDG_DATA_HOME")
+		if dataDir == "" {
+			home, _ := os.UserHomeDir()
+			if home != "" {
+				dataDir = filepath.Join(home, ".local", "share")
+			}
+		}
+		dbPath := filepath.Join(dataDir, "picord", "catalog.db")
+		_ = os.MkdirAll(filepath.Dir(dbPath), 0755)
+		cs, err := catalog.Open(dbPath)
+		if err != nil {
+			log.Printf("Warning: cannot open catalog store: %v", err)
+		} else {
+			catalogStore = cs
+			catalogMatcher = catalog.NewMatcher(catalogStore)
+			imgResolver = catalog.ImageResolver{
+				Mode:            catalog.ImageMode(cfg.Images.Mode),
+				GenericAssetKey: cfg.Images.GenericAssetKey,
+				ExternalEnabled: false, // only enabled after live validation
+			}
+		}
+	}
+
 	configMgr, configErr := config.NewManager(configPath, func(newCfg config.AppConfig) {
 		cfg = newCfg
 		profileMgr.MergeUser(newCfg.Profiles)
+		if catalogStore != nil {
+			imgResolver = catalog.ImageResolver{
+				Mode:            catalog.ImageMode(newCfg.Images.Mode),
+				GenericAssetKey: newCfg.Images.GenericAssetKey,
+				ExternalEnabled: false,
+			}
+		}
 		log.Println("Config auto-reloaded")
 	})
 	if configErr != nil {
@@ -224,7 +261,28 @@ func runDaemon(debug bool) int {
 				setRichPresence(rpcMgr, match, proc)
 				tray.UpdateStatus(match.Name)
 			}
-		} else if currentProfile != nil {
+			return
+		}
+
+		// Try catalog match if no profile matched and catalog is enabled.
+		if catalogMatcher != nil && proc != nil {
+			ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+			catResult := catalogMatcher.Match(ctx, *proc)
+			cancel()
+			if catResult != nil {
+				catProfile := catResult.ToProfile(imgResolver)
+				if currentProfile == nil || currentProfile.Name != catProfile.Name {
+					log.Printf("[presence] matched catalog=%q process=%q reason=%s", catProfile.Name, proc.Name, catResult.Reason)
+					currentProfile = &catProfile
+					state.SetActive(catProfile.Name, proc.Name)
+					setRichPresence(rpcMgr, &catProfile, proc)
+					tray.UpdateStatus(catProfile.Name)
+				}
+				return
+			}
+		}
+
+		if currentProfile != nil {
 			log.Println("[presence] no match, clearing activity")
 			currentProfile = nil
 			state.ClearActive()
@@ -260,7 +318,7 @@ func runDaemon(debug bool) int {
 	signal.Notify(sigCh, syscall.SIGINT, syscall.SIGTERM)
 	go func() {
 		<-sigCh
-		cleanup(rpcMgr, httpServer, configMgr, procMonitor, reconnectStopCh)
+		cleanup(rpcMgr, httpServer, configMgr, procMonitor, reconnectStopCh, catalogStore)
 		os.Exit(0)
 	}()
 
@@ -295,7 +353,7 @@ func runDaemon(debug bool) int {
 			tray.UpdateStatus("Idle")
 		},
 		Quit: func() {
-			cleanup(rpcMgr, httpServer, configMgr, procMonitor, reconnectStopCh)
+			cleanup(rpcMgr, httpServer, configMgr, procMonitor, reconnectStopCh, catalogStore)
 			os.Exit(0)
 		},
 	})
@@ -319,6 +377,18 @@ func defaultConfig() config.AppConfig {
 		PollInterval:     2,
 		WebPort:          17970,
 		ScanAllProcesses: true,
+		Catalog: config.CatalogConfig{
+			Enabled:      true,
+			AutoRefresh:  true,
+			Sources:      []string{"steam_local", "lutris_local", "desktop"},
+			RefreshHours: 24,
+		},
+		Images: config.ImageConfig{
+			Mode:            "generic",
+			CacheEnabled:    true,
+			MaxCacheMB:      512,
+			GenericAssetKey: "picord_game",
+		},
 	}
 }
 
@@ -370,7 +440,7 @@ func setRichPresence(rm *rpcManager, p *profile.Profile, proc *profile.DetectedP
 	}
 }
 
-func cleanup(rm *rpcManager, httpServer *http.Server, configMgr *config.Manager, mon *monitor.Monitor, reconnectStopCh chan struct{}) {
+func cleanup(rm *rpcManager, httpServer *http.Server, configMgr *config.Manager, mon *monitor.Monitor, reconnectStopCh chan struct{}, catalogStore *catalog.Store) {
 	if reconnectStopCh != nil {
 		close(reconnectStopCh)
 	}
@@ -383,6 +453,9 @@ func cleanup(rm *rpcManager, httpServer *http.Server, configMgr *config.Manager,
 	}
 	if configMgr != nil {
 		configMgr.Close()
+	}
+	if catalogStore != nil {
+		catalogStore.Close()
 	}
 	log.Println("Picord stopped")
 }
