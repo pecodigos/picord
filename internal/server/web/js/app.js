@@ -1,3 +1,11 @@
+function clearChildren(el) {
+  while (el.firstChild) el.removeChild(el.firstChild);
+}
+
+function createText(text) {
+  return document.createTextNode(text);
+}
+
 async function refreshStatus() {
   const s = await get('/api/status');
   document.getElementById('active-name').textContent = s.active_name || 'None';
@@ -9,15 +17,30 @@ async function refreshStatus() {
   btn.textContent = s.auto_detect ? 'Disable Auto-Detect' : 'Enable Auto-Detect';
 
   const tbody = document.getElementById('process-tbody');
+  clearChildren(tbody);
   if (!s.detected_processes || s.detected_processes.length === 0) {
-    tbody.innerHTML = '<tr><td colspan="3">No processes detected</td></tr>';
+    const tr = document.createElement('tr');
+    const td = document.createElement('td');
+    td.colSpan = 3;
+    td.textContent = 'No processes detected';
+    tr.appendChild(td);
+    tbody.appendChild(tr);
   } else {
-    tbody.innerHTML = s.detected_processes.map(p =>
-      `<tr><td>${p.pid ?? p.PID}</td><td>${p.name ?? p.Name}</td><td>${p.window_title || '-'}</td></tr>`
-    ).join('');
+    s.detected_processes.forEach(p => {
+      const tr = document.createElement('tr');
+      const tdPid = document.createElement('td');
+      tdPid.textContent = String(p.pid ?? p.PID);
+      const tdName = document.createElement('td');
+      tdName.textContent = p.name ?? p.Name;
+      const tdTitle = document.createElement('td');
+      tdTitle.textContent = p.window_title || '-';
+      tr.appendChild(tdPid);
+      tr.appendChild(tdName);
+      tr.appendChild(tdTitle);
+      tbody.appendChild(tr);
+    });
   }
 
-  // Refresh catalog status in parallel
   refreshCatalogStatus();
 }
 
@@ -41,22 +64,54 @@ async function searchCatalog() {
 
 function renderCatalogResults(results, containerId) {
   const container = document.getElementById(containerId);
+  clearChildren(container);
   if (!results || results.length === 0) {
-    container.innerHTML = '<p style="color:#888">No results found.</p>';
+    const p = document.createElement('p');
+    p.style.color = '#888';
+    p.textContent = 'No results found.';
+    container.appendChild(p);
     return;
   }
-  container.innerHTML = results.map(e => `
-    <div class="catalog-result-card">
-      <div class="info">
-        <span class="title">${e.title}</span>
-        <span class="meta">${e.source}${e.release_year ? ' · ' + e.release_year : ''}</span>
-      </div>
-      <div>
-        <button class="small" onclick="saveProfileFromCatalog('${e.id}')">Save Profile</button>
-      </div>
-    </div>
-  `).join('');
+  results.forEach(e => {
+    const card = document.createElement('div');
+    card.className = 'catalog-result-card';
+    card.dataset.entryId = e.id;
+
+    const info = document.createElement('div');
+    info.className = 'info';
+
+    const title = document.createElement('span');
+    title.className = 'title';
+    title.textContent = e.title;
+
+    const meta = document.createElement('span');
+    meta.className = 'meta';
+    meta.textContent = e.source + (e.release_year ? ' \u00b7 ' + e.release_year : '');
+
+    info.appendChild(title);
+    info.appendChild(meta);
+
+    const btnDiv = document.createElement('div');
+    const btn = document.createElement('button');
+    btn.className = 'small';
+    btn.textContent = 'Save Profile';
+    btnDiv.appendChild(btn);
+
+    card.appendChild(info);
+    card.appendChild(btnDiv);
+    container.appendChild(card);
+  });
 }
+
+// Event delegation for catalog result save buttons.
+document.getElementById('catalog-results').addEventListener('click', (e) => {
+  if (e.target.matches('button.small') && e.target.textContent === 'Save Profile') {
+    const card = e.target.closest('.catalog-result-card');
+    if (card && card.dataset.entryId) {
+      saveProfileFromCatalog(card.dataset.entryId);
+    }
+  }
+});
 
 async function refreshCatalogSource(source) {
   const btn = event.target;
@@ -95,20 +150,57 @@ async function fillFromCatalogSearch() {
   if (!query) return;
   const results = await get('/api/catalog/search?q=' + encodeURIComponent(query));
   const container = document.getElementById('mf-catalog-results');
+  clearChildren(container);
   if (!results || results.length === 0) {
-    container.innerHTML = '<p style="color:#888;font-size:0.85em">No results.</p>';
+    const p = document.createElement('p');
+    p.style.color = '#888';
+    p.style.fontSize = '0.85em';
+    p.textContent = 'No results.';
+    container.appendChild(p);
     return;
   }
-  container.innerHTML = results.map(e => `
-    <div class="catalog-result-card" style="padding:8px;margin-bottom:4px;">
-      <div class="info">
-        <span class="title">${e.title}</span>
-        <span class="meta">${e.source}${e.release_year ? ' · ' + e.release_year : ''}</span>
-      </div>
-      <button class="small" onclick="fillProfileFromEntry('${e.title}', '${e.source}', '${e.id}')">Use</button>
-    </div>
-  `).join('');
+  results.forEach(e => {
+    const card = document.createElement('div');
+    card.className = 'catalog-result-card';
+    card.style.padding = '8px';
+    card.style.marginBottom = '4px';
+    card.dataset.entryId = e.id;
+    card.dataset.title = e.title;
+    card.dataset.source = e.source;
+
+    const info = document.createElement('div');
+    info.className = 'info';
+
+    const title = document.createElement('span');
+    title.className = 'title';
+    title.textContent = e.title;
+
+    const meta = document.createElement('span');
+    meta.className = 'meta';
+    meta.textContent = e.source + (e.release_year ? ' \u00b7 ' + e.release_year : '');
+
+    info.appendChild(title);
+    info.appendChild(meta);
+
+    const btn = document.createElement('button');
+    btn.className = 'small';
+    btn.textContent = 'Use';
+
+    card.appendChild(info);
+    card.appendChild(btn);
+    container.appendChild(card);
+  });
 }
+
+// Event delegation for modal catalog search Use buttons.
+document.getElementById('mf-catalog-results').addEventListener('click', (e) => {
+  if (e.target.matches('button.small') && e.target.textContent === 'Use') {
+    const card = e.target.closest('.catalog-result-card');
+    if (card) {
+      fillProfileFromEntry(card.dataset.title, card.dataset.source, card.dataset.entryId);
+    }
+  }
+});
 
 function fillProfileFromEntry(title, source, entryId) {
   document.getElementById('mf-name').value = title;
@@ -120,40 +212,114 @@ function fillProfileFromEntry(title, source, entryId) {
 async function refreshProfiles() {
   const profiles = await get('/api/profiles');
   const tbody = document.getElementById('profiles-tbody');
+  clearChildren(tbody);
   if (!profiles || profiles.length === 0) {
-    tbody.innerHTML = '<tr><td colspan="5">No custom profiles yet</td></tr>';
+    const tr = document.createElement('tr');
+    const td = document.createElement('td');
+    td.colSpan = 5;
+    td.textContent = 'No custom profiles yet';
+    tr.appendChild(td);
+    tbody.appendChild(tr);
     return;
   }
-  tbody.innerHTML = profiles.map(p =>
-    `<tr>
-      <td>${p.name}</td>
-      <td>${p.match.type}: ${p.match.value}</td>
-      <td>${p.priority}</td>
-      <td><span class="badge ${p.enabled ? 'badge-on' : 'badge-off'}">${p.enabled ? 'On' : 'Off'}</span></td>
-      <td class="actions-cell">
-        <button class="edit-btn" onclick="editProfile('${p.name}')">Edit</button>
-        <button class="delete-btn" onclick="deleteProfile('${p.name}')">Del</button>
-      </td>
-    </tr>`
-  ).join('');
+  profiles.forEach(p => {
+    const tr = document.createElement('tr');
+
+    const tdName = document.createElement('td');
+    tdName.textContent = p.name;
+
+    const tdMatch = document.createElement('td');
+    tdMatch.textContent = p.match.type + ': ' + p.match.value;
+
+    const tdPriority = document.createElement('td');
+    tdPriority.textContent = String(p.priority);
+
+    const tdEnabled = document.createElement('td');
+    const badge = document.createElement('span');
+    badge.className = 'badge ' + (p.enabled ? 'badge-on' : 'badge-off');
+    badge.textContent = p.enabled ? 'On' : 'Off';
+    tdEnabled.appendChild(badge);
+
+    const tdActions = document.createElement('td');
+    tdActions.className = 'actions-cell';
+
+    const editBtn = document.createElement('button');
+    editBtn.className = 'edit-btn';
+    editBtn.textContent = 'Edit';
+    editBtn.dataset.name = p.name;
+
+    const delBtn = document.createElement('button');
+    delBtn.className = 'delete-btn';
+    delBtn.textContent = 'Del';
+    delBtn.dataset.name = p.name;
+
+    tdActions.appendChild(editBtn);
+    tdActions.appendChild(delBtn);
+
+    tr.appendChild(tdName);
+    tr.appendChild(tdMatch);
+    tr.appendChild(tdPriority);
+    tr.appendChild(tdEnabled);
+    tr.appendChild(tdActions);
+    tbody.appendChild(tr);
+  });
 }
+
+// Event delegation for profile edit/delete buttons.
+document.getElementById('profiles-tbody').addEventListener('click', (e) => {
+  if (e.target.matches('button.edit-btn')) {
+    editProfile(e.target.dataset.name);
+  } else if (e.target.matches('button.delete-btn')) {
+    deleteProfile(e.target.dataset.name);
+  }
+});
 
 async function refreshDefaults() {
   const defaults = await get('/api/defaults');
   const tbody = document.getElementById('defaults-tbody');
+  clearChildren(tbody);
   if (!defaults || defaults.length === 0) {
-    tbody.innerHTML = '<tr><td colspan="4">No built-in profiles</td></tr>';
+    const tr = document.createElement('tr');
+    const td = document.createElement('td');
+    td.colSpan = 4;
+    td.textContent = 'No built-in profiles';
+    tr.appendChild(td);
+    tbody.appendChild(tr);
     return;
   }
-  tbody.innerHTML = defaults.map(p =>
-    `<tr>
-      <td>${p.name}</td>
-      <td>${p.match.type}: ${p.match.value}</td>
-      <td>${p.priority}</td>
-      <td><button class="copy-btn" onclick="copyDefault('${p.name}')">Copy to My Profiles</button></td>
-    </tr>`
-  ).join('');
+  defaults.forEach(p => {
+    const tr = document.createElement('tr');
+
+    const tdName = document.createElement('td');
+    tdName.textContent = p.name;
+
+    const tdMatch = document.createElement('td');
+    tdMatch.textContent = p.match.type + ': ' + p.match.value;
+
+    const tdPriority = document.createElement('td');
+    tdPriority.textContent = String(p.priority);
+
+    const tdAction = document.createElement('td');
+    const btn = document.createElement('button');
+    btn.className = 'copy-btn';
+    btn.textContent = 'Copy to My Profiles';
+    btn.dataset.name = p.name;
+    tdAction.appendChild(btn);
+
+    tr.appendChild(tdName);
+    tr.appendChild(tdMatch);
+    tr.appendChild(tdPriority);
+    tr.appendChild(tdAction);
+    tbody.appendChild(tr);
+  });
 }
+
+// Event delegation for default profile copy buttons.
+document.getElementById('defaults-tbody').addEventListener('click', (e) => {
+  if (e.target.matches('button.copy-btn')) {
+    copyDefault(e.target.dataset.name);
+  }
+});
 
 async function refreshAll() {
   await Promise.all([refreshStatus(), refreshProfiles(), refreshDefaults()]);

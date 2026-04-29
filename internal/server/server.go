@@ -87,12 +87,34 @@ type Server struct {
 	OnProfilesSaved func([]profile.Profile)
 }
 
+type sanitizedProcess struct {
+	PID         int    `json:"pid"`
+	Name        string `json:"name"`
+	WindowTitle string `json:"window_title,omitempty"`
+	SteamAppID  string `json:"steam_app_id,omitempty"`
+	DesktopID   string `json:"desktop_id,omitempty"`
+}
+
+func sanitizeDetected(procs []profile.DetectedProcess) []sanitizedProcess {
+	out := make([]sanitizedProcess, len(procs))
+	for i, p := range procs {
+		out[i] = sanitizedProcess{
+			PID:         p.PID,
+			Name:        p.Name,
+			WindowTitle: p.WindowTitle,
+			SteamAppID:  p.SteamAppID,
+			DesktopID:   p.DesktopID,
+		}
+	}
+	return out
+}
+
 type statusResponse struct {
-	ActiveName    string                    `json:"active_name"`
-	ActiveProcess string                    `json:"active_process"`
-	DetectedProcs []profile.DetectedProcess `json:"detected_processes"`
-	AutoDetect    bool                      `json:"auto_detect"`
-	HasOverride   bool                      `json:"has_override"`
+	ActiveName    string             `json:"active_name"`
+	ActiveProcess string             `json:"active_process"`
+	DetectedProcs []sanitizedProcess `json:"detected_processes"`
+	AutoDetect    bool               `json:"auto_detect"`
+	HasOverride   bool               `json:"has_override"`
 }
 
 func New(s *AppState, pm *profile.Manager, cs *catalog.Store) *Server {
@@ -133,15 +155,14 @@ func (srv *Server) handleStatus(w http.ResponseWriter, r *http.Request) {
 	}
 
 	srv.state.mu.RLock()
-	defer srv.state.mu.RUnlock()
-
 	resp := statusResponse{
 		ActiveName:    srv.state.activeName,
 		ActiveProcess: srv.state.activeProc,
-		DetectedProcs: srv.state.detectedProcs,
-		AutoDetect:    srv.state.AutoDetectEnabled(),
-		HasOverride:   srv.state.HasOverride(),
+		DetectedProcs: sanitizeDetected(srv.state.detectedProcs),
+		AutoDetect:    srv.state.autoDetect,
+		HasOverride:   srv.state.override != nil,
 	}
+	srv.state.mu.RUnlock()
 	writeJSON(w, resp)
 }
 
@@ -495,11 +516,22 @@ func writeError(w http.ResponseWriter, msg string, code int) {
 	json.NewEncoder(w).Encode(map[string]string{"error": msg})
 }
 
+func isLocalOrigin(origin string) bool {
+	return origin == "" ||
+		strings.HasPrefix(origin, "http://localhost:") ||
+		strings.HasPrefix(origin, "http://127.0.0.1:") ||
+		origin == "http://localhost" ||
+		origin == "http://127.0.0.1"
+}
+
 func withCORS(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		w.Header().Set("Access-Control-Allow-Origin", "*")
-		w.Header().Set("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, OPTIONS")
-		w.Header().Set("Access-Control-Allow-Headers", "Content-Type")
+		origin := r.Header.Get("Origin")
+		if isLocalOrigin(origin) {
+			w.Header().Set("Access-Control-Allow-Origin", origin)
+			w.Header().Set("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, OPTIONS")
+			w.Header().Set("Access-Control-Allow-Headers", "Content-Type")
+		}
 		if r.Method == http.MethodOptions {
 			w.WriteHeader(200)
 			return

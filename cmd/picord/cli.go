@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"net/url"
 	"os"
 	"os/signal"
 	"path/filepath"
@@ -27,7 +28,7 @@ func runCLI(args []string, debug bool) int {
 		return runDaemon(debug)
 	case "status":
 		return cmdStatus()
-	case "profiles":
+	case "profiles", "profile":
 		return cmdProfiles(args[1:])
 	case "override":
 		return cmdOverride(args[1:])
@@ -177,37 +178,36 @@ func cmdStatus() int {
 
 func cmdOverride(args []string) int {
 	fs := flag.NewFlagSet("override", flag.ExitOnError)
-	name := fs.String("n", "", "Profile name")
-	details := fs.String("d", "", "Activity details")
-	state := fs.String("s", "", "Activity state")
-	image := fs.String("i", "", "Large image key")
+	nameShort := fs.String("n", "", "Profile name")
+	nameLong := fs.String("name", "", "Profile name")
+	detailsShort := fs.String("d", "", "Activity details")
+	detailsLong := fs.String("details", "", "Activity details")
+	stateShort := fs.String("s", "", "Activity state")
+	stateLong := fs.String("state", "", "Activity state")
+	imageShort := fs.String("i", "", "Large image key")
+	imageLong := fs.String("image", "", "Large image key")
 	fs.Parse(args)
 
-	// Also support --long-form flags manually
-	for i := 0; i < len(args); i++ {
-		switch args[i] {
-		case "--name":
-			if i+1 < len(args) { *name = args[i+1]; i++ }
-		case "--details":
-			if i+1 < len(args) { *details = args[i+1]; i++ }
-		case "--state":
-			if i+1 < len(args) { *state = args[i+1]; i++ }
-		case "--image":
-			if i+1 < len(args) { *image = args[i+1]; i++ }
-		}
-	}
+	name := *nameShort
+	if name == "" { name = *nameLong }
+	details := *detailsShort
+	if details == "" { details = *detailsLong }
+	state := *stateShort
+	if state == "" { state = *stateLong }
+	image := *imageShort
+	if image == "" { image = *imageLong }
 
-	if *name == "" {
+	if name == "" {
 		fmt.Fprintln(os.Stderr, "Error: name is required")
 		return 1
 	}
 
 	p := profile.Profile{
-		Name: *name,
+		Name: name,
 		Activity: profile.Activity{
-			Details:    *details,
-			State:      *state,
-			LargeImage: *image,
+			Details:    details,
+			State:      state,
+			LargeImage: image,
 		},
 	}
 
@@ -246,17 +246,6 @@ func cmdDebugRPCImage(args []string) int {
 	externalURL := fs.String("external-url", "", "External image URL to test")
 	appID := fs.String("app-id", "", "Discord application client ID")
 	fs.Parse(args)
-
-	for i := 0; i < len(args); i++ {
-		switch args[i] {
-		case "--asset-key":
-			if i+1 < len(args) { *assetKey = args[i+1]; i++ }
-		case "--external-url":
-			if i+1 < len(args) { *externalURL = args[i+1]; i++ }
-		case "--app-id":
-			if i+1 < len(args) { *appID = args[i+1]; i++ }
-		}
-	}
 
 	if *appID == "" {
 		fmt.Fprintln(os.Stderr, "Error: --app-id is required")
@@ -346,7 +335,7 @@ func cmdCatalogStatus() int {
 }
 
 func cmdCatalogSearch(query string) int {
-	resp, err := apiGet("/api/catalog/search?q=" + query)
+	resp, err := apiGet("/api/catalog/search?q=" + url.QueryEscape(query))
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "Cannot connect to picord daemon: %v\n", err)
 		return 1
@@ -362,20 +351,6 @@ func cmdCatalogRefresh(args []string) int {
 	source := fs.String("source", "", "Source to refresh (steam_local, lutris_public, desktop)")
 	maxPages := fs.Int("max-pages", 0, "Max pages to fetch (for paginated sources)")
 	fs.Parse(args)
-
-	// Manual long flag support
-	for i := 0; i < len(args); i++ {
-		switch args[i] {
-		case "--source":
-			if i+1 < len(args) { *source = args[i+1]; i++ }
-		case "--max-pages":
-			if i+1 < len(args) {
-				if v, err := fmt.Sscanf(args[i+1], "%d", maxPages); v == 1 && err == nil {
-					i++
-				}
-			}
-		}
-	}
 
 	if *source == "" {
 		fmt.Fprintln(os.Stderr, "Error: --source is required")
