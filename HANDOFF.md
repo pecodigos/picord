@@ -427,6 +427,12 @@ profiles:                       # Optional custom profiles
 - sendCommand() reads exactly ONE response frame. Unsolicited Discord events could break it.
 - **Fix if real Discord exposes this:** Add a background frame reader goroutine that routes responses by nonce and handles unsolicited events separately.
 
+### CRITICAL: Discord image mode unvalidated
+- A `picord debug-rpc-image` CLI command exists to test asset keys and external URLs against a live Discord client.
+- External URL mode has NOT been validated against a real Discord client yet.
+- Until validated, `images.mode` defaults to `generic` and `external_url` should not be enabled.
+- **Validation needed:** Run `picord debug-rpc-image --app-id <ID> --external-url https://cdn.akamai.steamstatic.com/steam/apps/620/header.jpg` with Discord running and observe if the image appears.
+
 ### RESOLVED: Pre-emptive process matching
 - `scan_all_processes` now defaults to true and scans every numeric `/proc/<pid>` entry.
 - `scan_all_processes: false` keeps the legacy Discord-IPC-only scan for narrower detection.

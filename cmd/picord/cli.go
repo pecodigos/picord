@@ -8,11 +8,13 @@ import (
 	"io"
 	"net/http"
 	"os"
+	"os/signal"
 	"path/filepath"
 	"text/tabwriter"
 
 	"github.com/pecodigos/picord/internal/config"
 	"github.com/pecodigos/picord/internal/profile"
+	"github.com/pecodigos/picord/internal/rpc"
 )
 
 func runCLI(args []string, debug bool) int {
@@ -35,6 +37,8 @@ func runCLI(args []string, debug bool) int {
 		return cmdReload()
 	case "catalog":
 		return cmdCatalog(args[1:])
+	case "debug-rpc-image":
+		return cmdDebugRPCImage(args[1:])
 	case "help", "-h", "--help":
 		printUsage()
 		return 0
@@ -233,6 +237,76 @@ func cmdReload() int {
 		return 1
 	}
 	printResponse(resp)
+	return 0
+}
+
+func cmdDebugRPCImage(args []string) int {
+	fs := flag.NewFlagSet("debug-rpc-image", flag.ExitOnError)
+	assetKey := fs.String("asset-key", "", "Discord asset key to test")
+	externalURL := fs.String("external-url", "", "External image URL to test")
+	appID := fs.String("app-id", "", "Discord application client ID")
+	fs.Parse(args)
+
+	for i := 0; i < len(args); i++ {
+		switch args[i] {
+		case "--asset-key":
+			if i+1 < len(args) { *assetKey = args[i+1]; i++ }
+		case "--external-url":
+			if i+1 < len(args) { *externalURL = args[i+1]; i++ }
+		case "--app-id":
+			if i+1 < len(args) { *appID = args[i+1]; i++ }
+		}
+	}
+
+	if *appID == "" {
+		fmt.Fprintln(os.Stderr, "Error: --app-id is required")
+		return 1
+	}
+
+	client, err := rpc.NewClient(*appID)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "Cannot connect to Discord: %v\n", err)
+		return 1
+	}
+	defer client.Close()
+
+	act := &rpc.RichActivity{
+		Details:  "Picord Image Test",
+		State:    "Testing image display",
+		Instance: false,
+	}
+
+	if *externalURL != "" {
+		act.Assets = &rpc.RichAssets{
+			LargeImage: *externalURL,
+			LargeText:  "External URL Test",
+		}
+		fmt.Printf("Testing external URL: %s\n", *externalURL)
+	} else if *assetKey != "" {
+		act.Assets = &rpc.RichAssets{
+			LargeImage: *assetKey,
+			LargeText:  "Asset Key Test",
+		}
+		fmt.Printf("Testing asset key: %s\n", *assetKey)
+	} else {
+		fmt.Fprintln(os.Stderr, "Error: either --asset-key or --external-url is required")
+		return 1
+	}
+
+	fmt.Printf("Payload: %+v\n", act)
+	if err := client.SetActivity(act); err != nil {
+		fmt.Fprintf(os.Stderr, "Error setting activity: %v\n", err)
+		return 1
+	}
+	fmt.Println("Activity set. Check Discord. Press Ctrl+C to clear and exit.")
+
+	// Wait for interrupt
+	sigCh := make(chan os.Signal, 1)
+	signal.Notify(sigCh, os.Interrupt)
+	<-sigCh
+
+	client.ClearActivity()
+	fmt.Println("Activity cleared.")
 	return 0
 }
 
