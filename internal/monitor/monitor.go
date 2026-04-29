@@ -115,7 +115,7 @@ func scanProcesses(scanAll bool) []profile.DetectedProcess {
 		seen[pid] = true
 
 		name := readProcName(pid)
-		exePath, cwd, args, steamAppID := readProcHints(pid, name)
+		exePath, cwd, args, steamAppID, desktopID := readProcHints(pid, name)
 		processes = append(processes, profile.DetectedProcess{
 			PID:         pid,
 			Name:        name,
@@ -124,6 +124,7 @@ func scanProcesses(scanAll bool) []profile.DetectedProcess {
 			Cwd:         cwd,
 			Args:        args,
 			SteamAppID:  steamAppID,
+			DesktopID:   desktopID,
 		})
 	}
 

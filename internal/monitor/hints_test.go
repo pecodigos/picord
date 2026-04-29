@@ -65,7 +65,7 @@ func TestReadProcHints_Basic(t *testing.T) {
 		"PATH":       "/usr/bin",
 	})
 
-	exePath, cwd, args, steamAppID := readProcHints(1234, "game")
+	exePath, cwd, args, steamAppID, desktopID := readProcHints(1234, "game")
 	if exePath != "/usr/bin/game" {
 		t.Errorf("exePath=%q, want /usr/bin/game", exePath)
 	}
@@ -78,6 +78,9 @@ func TestReadProcHints_Basic(t *testing.T) {
 	if steamAppID != "620" {
 		t.Errorf("steamAppID=%q, want 620", steamAppID)
 	}
+	if desktopID != "" {
+		t.Errorf("desktopID=%q, want empty", desktopID)
+	}
 }
 
 func TestReadProcHints_SteamGameId(t *testing.T) {
@@ -85,7 +88,7 @@ func TestReadProcHints_SteamGameId(t *testing.T) {
 		"SteamGameId": "730",
 	})
 
-	_, _, _, steamAppID := readProcHints(1235, "game")
+	_, _, _, steamAppID, _ := readProcHints(1235, "game")
 	if steamAppID != "730" {
 		t.Errorf("steamAppID=%q, want 730", steamAppID)
 	}
@@ -94,7 +97,7 @@ func TestReadProcHints_SteamGameId(t *testing.T) {
 func TestReadProcHints_CmdlineAppId(t *testing.T) {
 	setupMockProcHints(t, 1236, "game", []string{"/usr/bin/game", "AppId=440"}, map[string]string{})
 
-	_, _, _, steamAppID := readProcHints(1236, "game")
+	_, _, _, steamAppID, _ := readProcHints(1236, "game")
 	if steamAppID != "440" {
 		t.Errorf("steamAppID=%q, want 440", steamAppID)
 	}
@@ -103,7 +106,7 @@ func TestReadProcHints_CmdlineAppId(t *testing.T) {
 func TestReadProcHints_CmdlineSteamRunGameId(t *testing.T) {
 	setupMockProcHints(t, 1237, "game", []string{"/usr/bin/game", "steam://rungameid/570"}, map[string]string{})
 
-	_, _, _, steamAppID := readProcHints(1237, "game")
+	_, _, _, steamAppID, _ := readProcHints(1237, "game")
 	if steamAppID != "570" {
 		t.Errorf("steamAppID=%q, want 570", steamAppID)
 	}
@@ -114,9 +117,23 @@ func TestReadProcHints_NoSteam(t *testing.T) {
 		"PATH": "/usr/bin",
 	})
 
-	_, _, _, steamAppID := readProcHints(1238, "firefox")
+	_, _, _, steamAppID, _ := readProcHints(1238, "firefox")
 	if steamAppID != "" {
 		t.Errorf("steamAppID=%q, want empty", steamAppID)
+	}
+}
+
+func TestReadProcHints_DesktopIDFromEnv(t *testing.T) {
+	setupMockProcHints(t, 1240, "firefox", []string{"/usr/bin/firefox"}, map[string]string{
+		"GIO_LAUNCHED_DESKTOP_FILE": "/usr/share/applications/firefox.desktop",
+	})
+
+	_, _, _, steamAppID, desktopID := readProcHints(1240, "firefox")
+	if steamAppID != "" {
+		t.Errorf("steamAppID=%q, want empty", steamAppID)
+	}
+	if desktopID != "firefox" {
+		t.Errorf("desktopID=%q, want firefox", desktopID)
 	}
 }
 
@@ -127,7 +144,7 @@ func TestReadProcHints_EnvNotExposed(t *testing.T) {
 		"HOME":         "/home/user",
 	})
 
-	_, _, _, steamAppID := readProcHints(1239, "game")
+	_, _, _, steamAppID, _ := readProcHints(1239, "game")
 	if steamAppID != "620" {
 		t.Errorf("steamAppID=%q, want 620", steamAppID)
 	}

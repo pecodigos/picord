@@ -150,3 +150,30 @@ func TestMonitor_StartStop(t *testing.T) {
 	// Since we can't easily synchronize without modifying the code,
 	// we at least verify the monitor can start and stop without panic.
 }
+
+func TestReadProcHints_DesktopID(t *testing.T) {
+	root := setupMockProc(t)
+	pid := 5000
+	procDir := filepath.Join(root, fmt.Sprintf("%d", pid))
+	if err := os.MkdirAll(procDir, 0755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(procDir, "comm"), []byte("firefox\n"), 0644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(procDir, "cmdline"), []byte("firefox\x00"), 0644); err != nil {
+		t.Fatal(err)
+	}
+	envData := "GIO_LAUNCHED_DESKTOP_FILE=/usr/share/applications/firefox.desktop\x00"
+	if err := os.WriteFile(filepath.Join(procDir, "environ"), []byte(envData), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	_, _, _, steamAppID, desktopID := readProcHints(pid, "firefox")
+	if desktopID != "firefox" {
+		t.Errorf("expected desktopID=firefox, got %q", desktopID)
+	}
+	if steamAppID != "" {
+		t.Errorf("expected empty steamAppID, got %q", steamAppID)
+	}
+}

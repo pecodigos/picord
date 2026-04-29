@@ -239,3 +239,54 @@ func TestStore_SourceState(t *testing.T) {
 		t.Errorf("lastError=%q, want empty", lastError)
 	}
 }
+
+func TestStore_UpsertReplacesAliases(t *testing.T) {
+	dir := t.TempDir()
+	store, err := Open(filepath.Join(dir, "catalog.db"))
+	if err != nil {
+		t.Fatalf("Open failed: %v", err)
+	}
+	defer store.Close()
+
+	ctx := context.Background()
+	e := Entry{
+		ID: "test:1", Source: "test", SourceID: "1", Kind: EntryKindGame,
+		Title: "Game", NormalizedTitle: NormalizeTitle("Game"),
+		UpdatedAt: time.Now(),
+	}
+
+	// First upsert with 2 aliases.
+	if err := store.UpsertEntry(ctx, e, []Alias{
+		{EntryID: e.ID, Kind: AliasTitle, Value: "Game", Normalized: NormalizeTitle("Game"), Confidence: 100},
+		{EntryID: e.ID, Kind: AliasExecutable, Value: "game.bin", Normalized: NormalizeTitle("game.bin"), Confidence: 80},
+	}); err != nil {
+		t.Fatalf("UpsertEntry failed: %v", err)
+	}
+
+	count, _ := store.CountAliases(ctx)
+	if count != 2 {
+		t.Fatalf("expected 2 aliases, got %d", count)
+	}
+
+	// Second upsert with 1 different alias should replace all old aliases.
+	if err := store.UpsertEntry(ctx, e, []Alias{
+		{EntryID: e.ID, Kind: AliasTitle, Value: "Game Updated", Normalized: NormalizeTitle("Game Updated"), Confidence: 100},
+	}); err != nil {
+		t.Fatalf("UpsertEntry failed: %v", err)
+	}
+
+	count, _ = store.CountAliases(ctx)
+	if count != 1 {
+		t.Fatalf("expected 1 alias after replacement, got %d", count)
+	}
+
+	// Third upsert with no aliases should clear all aliases.
+	if err := store.UpsertEntry(ctx, e, nil); err != nil {
+		t.Fatalf("UpsertEntry failed: %v", err)
+	}
+
+	count, _ = store.CountAliases(ctx)
+	if count != 0 {
+		t.Fatalf("expected 0 aliases after clearing, got %d", count)
+	}
+}

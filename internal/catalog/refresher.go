@@ -107,6 +107,8 @@ func (r *Refresher) refreshAll() {
 }
 
 // BuildSources creates source adapters from config source names.
+// Supported sources: steam_local, lutris_public, desktop.
+// lutris_local is not yet implemented.
 func BuildSources(sourceNames []string) ([]Source, error) {
 	var sources []Source
 	for _, name := range sourceNames {

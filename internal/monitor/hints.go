@@ -13,7 +13,7 @@ var steamAppIDRe = regexp.MustCompile(`(?i)(?:AppId=|steam://rungameid/)(\d+)`)
 
 // readProcHints collects game-identity hints from /proc/<pid> without exposing
 // the full environment. Only allowlisted env keys are returned.
-func readProcHints(pid int, name string) (exePath, cwd string, args []string, steamAppID string) {
+func readProcHints(pid int, name string) (exePath, cwd string, args []string, steamAppID, desktopID string) {
 	procPath := filepath.Join(procRoot, fmt.Sprintf("%d", pid))
 
 	// exe symlink
@@ -49,6 +49,7 @@ func readProcHints(pid int, name string) (exePath, cwd string, args []string, st
 	if err == nil {
 		env := parseEnvironAllowlist(envData, []string{
 			"SteamAppId", "SteamGameId", "SteamAppID", "SteamOverlayGameId",
+			"GIO_LAUNCHED_DESKTOP_FILE",
 		})
 		for _, key := range []string{"SteamAppId", "SteamGameId", "SteamAppID", "SteamOverlayGameId"} {
 			if v := env[key]; v != "" {
@@ -56,9 +57,15 @@ func readProcHints(pid int, name string) (exePath, cwd string, args []string, st
 				break
 			}
 		}
+		if v := env["GIO_LAUNCHED_DESKTOP_FILE"]; v != "" {
+			desktopID = filepath.Base(v)
+			if strings.HasSuffix(desktopID, ".desktop") {
+				desktopID = strings.TrimSuffix(desktopID, ".desktop")
+			}
+		}
 	}
 
-	return exePath, cwd, args, steamAppID
+	return exePath, cwd, args, steamAppID, desktopID
 }
 
 func parseEnvironAllowlist(data []byte, allowed []string) map[string]string {

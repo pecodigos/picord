@@ -21,6 +21,11 @@ func Open(path string) (*Store, error) {
 	db.SetConnMaxLifetime(0)
 	db.SetMaxOpenConns(1)
 
+	if _, err := db.Exec("PRAGMA foreign_keys = ON"); err != nil {
+		db.Close()
+		return nil, fmt.Errorf("enable foreign keys: %w", err)
+	}
+
 	s := &Store{db: db}
 	if err := s.migrate(); err != nil {
 		db.Close()
@@ -69,12 +74,12 @@ func (s *Store) UpsertEntry(ctx context.Context, e Entry, aliases []Alias) error
 		return fmt.Errorf("upsert entry: %w", err)
 	}
 
+	// Always remove old aliases for this entry so we can replace them.
+	_, err = tx.ExecContext(ctx, `DELETE FROM aliases WHERE entry_id = ?`, e.ID)
+	if err != nil {
+		return fmt.Errorf("delete old aliases: %w", err)
+	}
 	if len(aliases) > 0 {
-		// Remove old aliases for this entry so we can replace them.
-		_, err = tx.ExecContext(ctx, `DELETE FROM aliases WHERE entry_id = ?`, e.ID)
-		if err != nil {
-			return fmt.Errorf("delete old aliases: %w", err)
-		}
 		stmt, err := tx.PrepareContext(ctx, `
 			INSERT INTO aliases (entry_id, kind, value, normalized, confidence)
 			VALUES (?, ?, ?, ?, ?)

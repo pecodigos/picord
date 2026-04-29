@@ -53,7 +53,7 @@ func (s *LutrisPublicSource) Refresh(ctx context.Context, store *Store, opts Ref
 		return nil
 	}
 
-	cursor, _, _, _, err := store.GetSourceState(ctx, s.Name())
+	cursor, etag, _, _, err := store.GetSourceState(ctx, s.Name())
 	if err != nil {
 		return fmt.Errorf("get source state: %w", err)
 	}
@@ -73,26 +73,34 @@ func (s *LutrisPublicSource) Refresh(ctx context.Context, store *Store, opts Ref
 		if err != nil {
 			return fmt.Errorf("create request: %w", err)
 		}
+		if etag != "" {
+			req.Header.Set("If-None-Match", etag)
+		}
 
 		resp, err := s.client().Do(req)
 		if err != nil {
-			_ = store.SetSourceState(ctx, s.Name(), pageURL, "", fmt.Sprintf("request error: %v", err), time.Now())
+			_ = store.SetSourceState(ctx, s.Name(), pageURL, etag, fmt.Sprintf("request error: %v", err), time.Now())
 			return fmt.Errorf("fetch page: %w", err)
 		}
 		body, err := io.ReadAll(io.LimitReader(resp.Body, 16<<20)) // 16 MiB max
 		resp.Body.Close()
 		if err != nil {
-			_ = store.SetSourceState(ctx, s.Name(), pageURL, "", fmt.Sprintf("read body: %v", err), time.Now())
+			_ = store.SetSourceState(ctx, s.Name(), pageURL, etag, fmt.Sprintf("read body: %v", err), time.Now())
 			return fmt.Errorf("read body: %w", err)
 		}
+		if resp.StatusCode == http.StatusNotModified {
+			// No new data; treat as complete for this run.
+			_ = store.SetSourceState(ctx, s.Name(), "", etag, "", time.Now())
+			break
+		}
 		if resp.StatusCode != http.StatusOK {
-			_ = store.SetSourceState(ctx, s.Name(), pageURL, "", fmt.Sprintf("status %d: %s", resp.StatusCode, string(body)), time.Now())
+			_ = store.SetSourceState(ctx, s.Name(), pageURL, etag, fmt.Sprintf("status %d: %s", resp.StatusCode, string(body)), time.Now())
 			return fmt.Errorf("unexpected status %d", resp.StatusCode)
 		}
 
 		var pageData lutrisPage
 		if err := json.Unmarshal(body, &pageData); err != nil {
-			_ = store.SetSourceState(ctx, s.Name(), pageURL, "", fmt.Sprintf("parse json: %v", err), time.Now())
+			_ = store.SetSourceState(ctx, s.Name(), pageURL, etag, fmt.Sprintf("parse json: %v", err), time.Now())
 			return fmt.Errorf("parse json: %w", err)
 		}
 
@@ -119,14 +127,26 @@ func (s *LutrisPublicSource) Refresh(ctx context.Context, store *Store, opts Ref
 			}
 		}
 
-		// Save cursor after each successful page.
-		etag := resp.Header.Get("ETag")
-		_ = store.SetSourceState(ctx, s.Name(), pageURL, etag, "", time.Now())
+		// Save the *next* page URL as cursor so resume continues forward.
+		newCursor := pageData.Next
+		newETag := resp.Header.Get("ETag")
+		if newCursor == "" {
+			// Completed full sync; reset cursor for next full refresh.
+			newCursor = ""
+		}
+		_ = store.SetSourceState(ctx, s.Name(), newCursor, newETag, "", time.Now())
 
 		if pageData.Next == "" {
 			break
 		}
 		pageURL = pageData.Next
+
+		// Rate-limit pause between pages.
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		case <-time.After(500 * time.Millisecond):
+		}
 	}
 
 	return nil
