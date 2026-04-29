@@ -139,9 +139,15 @@ func cmdStatus() int {
 		fmt.Fprintln(w, "PID\tNAME\tWINDOW TITLE")
 		for _, p := range procs {
 			if m, ok := p.(map[string]any); ok {
-				pid, _ := m["PID"].(float64)
-				name, _ := m["Name"].(string)
-				title, _ := m["window_title"].(string)
+			pid, _ := m["pid"].(float64)
+			if pid == 0 {
+				pid, _ = m["PID"].(float64)
+			}
+			name, _ := m["name"].(string)
+			if name == "" {
+				name, _ = m["Name"].(string)
+			}
+			title, _ := m["window_title"].(string)
 				if title == "" {
 					title = "-"
 				}

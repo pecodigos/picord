@@ -7,9 +7,15 @@ import (
 )
 
 type DetectedProcess struct {
-	PID         int
-	Name        string
-	WindowTitle string `json:"window_title,omitempty"`
+	PID         int      `json:"pid"`
+	Name        string   `json:"name"`
+	WindowTitle string   `json:"window_title,omitempty"`
+	ExePath     string   `json:"exe_path,omitempty"`
+	Cwd         string   `json:"cwd,omitempty"`
+	Args        []string `json:"args,omitempty"`
+	SteamAppID  string   `json:"steam_app_id,omitempty"`
+	LutrisSlug  string   `json:"lutris_slug,omitempty"`
+	DesktopID   string   `json:"desktop_id,omitempty"`
 }
 
 func (p Profile) Matches(proc DetectedProcess) int {

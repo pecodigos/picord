@@ -13,7 +13,7 @@ async function refreshStatus() {
     tbody.innerHTML = '<tr><td colspan="3">No processes detected</td></tr>';
   } else {
     tbody.innerHTML = s.detected_processes.map(p =>
-      `<tr><td>${p.PID}</td><td>${p.Name}</td><td>${p.window_title || '-'}</td></tr>`
+      `<tr><td>${p.pid ?? p.PID}</td><td>${p.name ?? p.Name}</td><td>${p.window_title || '-'}</td></tr>`
     ).join('');
   }
 }
