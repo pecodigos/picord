@@ -3,15 +3,17 @@
 > **Date:** 2026-04-29  
 > **Branch:** \`master\`  
 > **Go:** 1.21+  
-> **Status:** Builds, \`go test ./...\` passes (57 tests), \`go vet\` clean.
+> **Status:** Builds; `go test -count=1 ./...`, `go vet ./...`, `go test -race ./...`, and `make build` pass. Post-Kimi audit found P0 integration blockers; next plan: `docs/plans/2026-04-29-post-kimi-stabilization.md`.
 
 ---
 
 ## 1. What This Is
 
-Picord is a Linux daemon that auto-sets Discord Rich Presence. By default it scans all numeric \`/proc/<pid>\` entries, extracts game identity hints (Steam AppID, Lutris slug, desktop ID), matches against built-in profiles and a local SQLite catalog, and sends \`SET_ACTIVITY\` over Discord's local IPC protocol. Users can set \`scan_all_processes: false\` to use the narrower legacy scan. Features: system tray (D-Bus SNI), web GUI (embedded SPA at \`localhost:17970\`), CLI, 48 built-in profiles, rich game catalog, template variables, window title matching, auto-reconnect, background catalog refresh.
+Picord is a Linux daemon that auto-sets Discord Rich Presence. By default it scans all numeric `/proc/<pid>` entries, reads process/window metadata, currently extracts Steam AppID hints, matches against built-in profiles and a local SQLite catalog, and sends `SET_ACTIVITY` over Discord's local IPC protocol. Users can set `scan_all_processes: false` to use the narrower legacy scan. Features: system tray (D-Bus SNI), web GUI (embedded SPA at `localhost:17970`), CLI, 48 built-in profiles, rich game catalog foundation, template variables, window title matching, auto-reconnect, background catalog refresh.
 
 **Current constraint:** Picord still needs a running Discord client and a valid Discord application client ID before it can publish Rich Presence. The scanner no longer depends on games opening Discord IPC sockets.
+
+**Post-Kimi blocker:** catalog auto-detection is not reliably active yet. The daemon tries catalog fallback only when `profileMgr.Match` returns a process, but that process is nil when no profile matched. Default catalog refresh also references unsupported `lutris_local`. See `docs/plans/2026-04-29-post-kimi-stabilization.md` before implementing more providers.
 
 ---
 
@@ -19,57 +21,56 @@ Picord is a Linux daemon that auto-sets Discord Rich Presence. By default it sca
 
 ```
 cmd/picord/
-  main.go          (330L) — Entry point. Wires all subsystems, signal handling, cleanup.
-  main_test.go     (10L) — Fallback default config coverage.
-  cli.go           (248L) — CLI: run, status, profiles, override, clear, reload, help.
+  main.go          — Entry point. Wires config, RPC, server, monitor, catalog, tray, cleanup.
+  main_test.go     — Daemon/default-config and runtime helper coverage.
+  cli.go           — CLI: run, status, profiles/from-catalog, override, clear, reload, catalog, debug-rpc-image.
 internal/rpc/
-  client.go        (314L) — Custom Discord IPC wire protocol. Handshake, frame I/O, reconnect.
-  client_test.go   (296L) — Mock Unix socket tests for handshake, SET_ACTIVITY, reconnect, close.
+  client.go        — Custom Discord IPC wire protocol. Handshake, frame I/O, reconnect.
+  client_test.go   — Mock Unix socket tests for handshake, SET_ACTIVITY, reconnect, close.
 internal/monitor/
-  monitor.go       (170L) — /proc scanner, poll loop, process name resolution.
-  window_linux.go  (248L) — Window title detection per compositor.
-  monitor_test.go  (152L)
-  window_linux_test.go (106L)
+  monitor.go       — /proc scanner, poll loop, process name resolution.
+  hints.go         — Allowlisted process hints, currently Steam AppID-focused.
+  window_linux.go  — Window title detection per compositor.
+  *_test.go
 internal/profile/
-  types.go         (43L) — Profile, MatchRule, Activity, Button structs.
-  matcher.go       (84L) — Profile.Matches(), FindBestMatch().
-  manager.go       (161L) — Thread-safe profile store. Merge, CRUD, sort.
-  render.go        (29L) — Template var replacement: {process_name}, {window_title}, {title}, {source}, {steam_app_id}.
-  defaults.go      (33L) — //go:embed defaults.yaml loader.
-  defaults.yaml    (549L) — 48 built-in profiles.
-  matcher_test.go  (131L)
-  manager_test.go  (133L)
-  render_test.go   (82L)
+  types.go         — Profile, MatchRule, Activity, Button structs.
+  matcher.go       — Profile.Matches(), FindBestMatch().
+  manager.go       — Thread-safe profile store. Merge, CRUD, sort.
+  render.go        — Template var replacement: {process_name}, {window_title}, {title}, {source}, {steam_app_id}.
+  defaults.go      — //go:embed defaults.yaml loader.
+  defaults.yaml    — built-in profiles.
+  *_test.go
 internal/catalog/
   types.go         — Entry, Alias, Image, DetectionHints, MatchResult structs.
   normalize.go     — Title normalization for search/matching.
-  store.go         — SQLite store: Open, Migrate, UpsertEntry, Search, SourceState.
+  store.go         — SQLite store: Open, migrate, upsert, search, source state.
   migrations.go    — Schema DDL for entries, aliases, images, source_state.
   matcher.go       — Catalog matcher: Steam AppID → Lutris slug → desktop ID → executable → title.
-  images.go        — Image cache download, SHA256 dedup, ImageResolver with safe modes.
+  images.go        — Image download/cache helper and ImageResolver modes.
   source.go        — Source interface.
   source_steam.go  — Parse appmanifest_*.acf and import Steam titles.
   source_lutris.go — Paginated Lutris public API importer.
   source_desktop.go — Parse .desktop files for native apps.
-  refresher.go     — Background refresh goroutine with rate limits.
-  store_test.go, matcher_test.go, images_test.go, source_*_test.go, refresher_test.go
+  refresher.go     — Background refresh goroutine.
+  testdata/ and *_test.go
 internal/config/
-  config.go        (167L) — YAML load/save, fsnotify watcher, validation. Adds CatalogConfig and ImageConfig.
-  config_test.go   (145L)
+  config.go        — YAML load/save, fsnotify watcher, CatalogConfig, ImageConfig.
+  config_test.go
 internal/server/
-  server.go        (336L) — HTTP API (12+ endpoints), CORS, AppState. Adds catalog endpoints.
-  server_test.go   — Tests for catalog endpoints.
+  server.go        — HTTP API, CORS, AppState, catalog endpoints.
+  server_test.go
   web/index.html
   web/css/style.css
   web/js/api.js
   web/js/app.js
 internal/tray/
-  tray.go          (103L) — energye/systray wrapper.
-  icon.png         (32px, embedded)
-icons/             — SVG source + PNG renders (16/32/128/256px)
-resources/         — systemd service, .desktop autostart entry
-.github/workflows/build.yml — CI: test, vet, build, release on tags
-Makefile — build, run, clean, install, fmt, lint, tidy, deb, appimage
+  tray.go          — energye/systray wrapper.
+  icon.png         — embedded tray icon.
+icons/             — SVG source + PNG renders.
+resources/         — systemd service, .desktop autostart entry.
+docs/plans/        — implementation/audit plans.
+.github/workflows/build.yml — CI: test, vet, build, release on tags.
+Makefile — build, run, clean, install, fmt, lint, tidy, deb, appimage.
 ```
 
 ---
@@ -77,9 +78,10 @@ Makefile — build, run, clean, install, fmt, lint, tidy, deb, appimage
 ## 3. Dependencies
 
 **Go modules (go.mod):**
-- \`github.com/energye/systray\` v1.0.3 — D-Bus SNI tray. API: \`MenuItem.Click(func)\`, \`AddMenuItemCheckbox\`, \`Run(onReady, onExit)\` blocks.
-- \`github.com/fsnotify/fsnotify\` v1.9.0 — Config file watcher.
-- \`gopkg.in/yaml.v3\` v3.0.1 — YAML parsing.
+- `github.com/energye/systray` v1.0.3 — D-Bus SNI tray. API: `MenuItem.Click(func)`, `AddMenuItemCheckbox`, `Run(onReady, onExit)` blocks.
+- `github.com/fsnotify/fsnotify` v1.9.0 — Config file watcher.
+- `gopkg.in/yaml.v3` v3.0.1 — YAML parsing.
+- `modernc.org/sqlite` v1.28.0 — pure-Go SQLite catalog store.
 
 **External Linux tools (optional):**
 - \`hyprctl\` — Hyprland window titles
@@ -97,8 +99,9 @@ Makefile — build, run, clean, install, fmt, lint, tidy, deb, appimage
 ```bash
 cd /mnt/hdd/Code/2026/picord
 make build                          # go build -ldflags="-s -w" -o bin/picord ./cmd/picord
-go test ./...                       # 42 tests
+go test -count=1 ./...              # unit/integration tests
 go vet ./...
+go test -race ./...                  # race pass during post-Kimi audit
 
 # Run daemon
 ./bin/picord                        # default: daemon + tray + web GUI
@@ -496,22 +499,26 @@ profiles:                       # Optional custom profiles
 
 ## 10. What Works / What Doesn't
 
-| Feature | Status |
-|---------|--------|
-| Compilation | ✅ Go 1.21+ |
-| Tests | ✅ 46/46 pass |
+| Area | Status |
+|------|--------|
+| Compilation | ✅ `make build` passes |
+| Tests | ✅ `go test -count=1 ./...` passes |
+| Race tests | ✅ `go test -race ./...` passes |
 | go vet | ✅ Clean |
-| CLI commands | ✅ All work |
+| CLI commands | ⚠️ Catalog/profile command naming and long flags need cleanup |
 | Debug logging | ✅ --debug flag |
-| Config load/save/reload | ✅ |
-| Web GUI | ✅ Embedded SPA |
+| Config load/save/reload | ⚠️ Reload only partially applies runtime changes |
+| Web GUI | ⚠️ Embedded SPA works, but catalog JSON/UI escaping need fixes |
 | Profile matching | ✅ process_name, window_title, regex |
-| Template variables | ✅ {process_name}, {window_title} |
-| Window title detection | ✅ Hyprland, Sway, X11 (best-effort) |
-| Auto-reconnect | ✅ Reconnect() + background ticker; can start before Discord |
+| Catalog auto-detection | ❌ Fallback bug prevents catalog-only matches in daemon |
+| Template variables | ✅ {process_name}, {window_title}, {title}, {source}, {steam_app_id} |
+| Window title detection | ✅ Hyprland, Sway, X11, KDE best-effort |
+| Auto-reconnect | ⚠️ Connects later, but does not replay desired presence yet |
 | System tray | ⚠️ Depends on compositor SNI support |
 | Actual Discord RPC | ⚠️ Mock socket covered; needs live Discord validation |
 | Pre-emptive matching | ✅ scan_all_processes default covers ordinary apps/games |
+| Catalog refresh defaults | ❌ Default includes unsupported `lutris_local` |
+| Repository hygiene | ❌ Root `picord` binary is tracked |
 | KDE dbus fallback | ❌ Stub |
 | AppImage packaging | ❌ Makefile stub |
 
@@ -547,15 +554,29 @@ Fixed high-priority prerequisites before scaling to a catalog:
 2. ✅ Fix Discord startup-order reconnect: replaced raw `*rpc.Client` with `rpcManager` wrapper that can `connect()` when nil. Background goroutine now creates a client if Discord starts after Picord. Added mock-socket tests for `rpcManager`.
 3. ✅ Gate noisy monitor logging: per-process and summary logs now require `monitor.SetDebug(true)`.
 
-### Phase 4. Rich game catalog plan (next)
-A detailed implementation plan for Kimi K2.6 is saved at `docs/plans/2026-04-29-kimi-rich-game-catalog.md`.
+### Phase 4. Rich game catalog foundation (implemented by Kimi)
+Kimi implemented the first catalog foundation pass after the original plan in `docs/plans/2026-04-29-kimi-rich-game-catalog.md`:
 
-Remaining prerequisites before catalog build-out:
-1. Validate Discord image behavior with a real client before relying on catalog image URLs in Rich Presence.
-2. Cache compiled regexes in `profile.Manager`.
-3. Add timestamps support (`start_time`) across config, GUI, CLI, and RPC payload.
+1. SQLite catalog store and schema.
+2. Steam local, Lutris public, and desktop source adapters.
+3. Catalog matcher and image resolver/cache helpers.
+4. Catalog HTTP endpoints, CLI commands, and web UI search/suggestions.
+5. Background refresher and tests.
 
-The catalog plan favors local/installed metadata first, public metadata second, and lazy image caching: do not download every image or try to upload every game image to one Discord application.
+Post-implementation audit found that the feature is not yet production-ready in the daemon. The next plan is saved at `docs/plans/2026-04-29-post-kimi-stabilization.md`.
+
+### Phase 5. Post-Kimi stabilization (next)
+Do these before adding new catalog providers or bigger image datasets:
+
+1. Fix catalog fallback so catalog-only detected games can actually set Rich Presence.
+2. Fix default sources (`lutris_local` is unsupported) and remove the tracked root `picord` binary.
+3. Fix catalog JSON DTOs so the web UI receives lowercase/snake-case fields.
+4. Replay desired presence after Discord reconnect and remove the startup IPC probe leak.
+5. Fix Discord IPC socket discovery for nonzero sockets and env override ordering.
+6. Sanitize `/api/status`, restrict local API write access, and remove UI injection hazards.
+7. Harden SQLite migrations, alias replacement, Lutris cursor/rate-limit behavior, and refresher shutdown.
+
+Keep image URLs conservative: do not send external Rich Presence image URLs by default until live Discord validation succeeds.
 
 ---
 
@@ -572,10 +593,11 @@ The catalog plan favors local/installed metadata first, public metadata second, 
 ## 13. How to Continue
 
 1. Read this file fully.
-2. Run go test ./... and go vet ./....
-3. Pick the highest-impact remaining item from the refined plan.
-4. Make minimal changes. Add tests.
-5. Run tests and vet again.
-6. Update this HANDOFF.md if architecture changes significantly.
+2. Read `docs/plans/2026-04-29-post-kimi-stabilization.md`.
+3. Run `go test -count=1 ./...`, `go vet ./...`, `go test -race ./...`, and `make build`.
+4. Start with Phase A from the post-Kimi plan.
+5. Make minimal changes. Add tests first for regressions.
+6. Commit each logical fix and push.
+7. Update this HANDOFF.md if architecture or actual status changes significantly.
 
 *End of handoff.*
