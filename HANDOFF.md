@@ -456,28 +456,35 @@ profiles:                       # Optional custom profiles
 
 ---
 
-## 11. Next Steps (Ranked)
+## 11. Refined Implementation Plan
 
-### 1. TEST WITH REAL DISCORD (CRITICAL)
-Create Discord app → set app_id → run ./bin/picord --debug run with Discord running. Check handshake and SET_ACTIVITY. If Discord sends unexpected responses, capture and fix parsing.
+### Phase 0. Baseline (complete)
+- Commit the current handoff state before making new changes.
+- Verify `go test ./...` and `go vet ./...` are green.
 
-### 2. Pre-Emptive Process Matching (HIGH)
-Add a config option scan_all_processes: true. When enabled, read ALL /proc/<pid>/comm files, match against profiles, and set presence for ANY matched process. Combine with existing IPC-connected scan.
+### Phase 1. Pre-emptive process matching (current focus)
+Goal: make Picord useful for ordinary games and apps that never connect to Discord IPC.
 
-### 3. Add RPC Client Tests (HIGH)
-Create internal/rpc/client_test.go with a mock Unix socket server implementing the Discord protocol. Test handshake, SET_ACTIVITY frame format, reconnect, close.
+TDD tasks:
+1. Config: add `scan_all_processes` with default `true`; verify missing config files and partial YAML keep the default enabled, while explicit `false` is preserved.
+2. Monitor: add an all-process scan path that reads every numeric `/proc/<pid>` entry, resolves names with the existing cmdline/comm fallback, keeps window-title enrichment, and deduplicates by PID.
+3. Daemon wiring: pass `cfg.ScanAllProcesses` into the monitor and include it in fallback/default config.
+4. Docs/UI: document the new config option and make the status/labels refer to detected processes rather than only Discord IPC connections.
+5. Verification: run `go test ./...`, `go vet ./...`, and build.
 
-### 4. Cache Compiled Regexes (MEDIUM)
-Add regexCache map[string]*regexp.Regexp to profile.Manager. Pre-compile on add/merge. Use cached regex in Matches().
+Design choices:
+- Default `scan_all_processes: true` because the handoff identifies IPC-only scanning as the main functional blocker.
+- Keep the old IPC-only mode behind `scan_all_processes: false` for users who want the narrower legacy behavior.
+- Avoid profile-manager changes in this phase; matching semantics stay the same.
 
-### 5. Timestamps Support (MEDIUM)
-Add start_time to profile.Activity. Set RichActivity.Timestamps.Start to Unix epoch ms in setRichPresence(). Add GUI field and CLI flag.
+### Phase 2. RPC client tests (next)
+Create `internal/rpc/client_test.go` with a mock Unix socket server implementing the Discord protocol. Test handshake, SET_ACTIVITY frame format, reconnect, and close. This prepares for real-Discord validation.
 
-### 6. Fix CI Go Version (LOW)
-Change .github/workflows/build.yml go-version to '1.21' or '1.22'.
-
-### 7. README Update (LOW)
-Update match types table. Remove "V2 coming soon" text.
+### Phase 3. Follow-up improvements
+1. TEST WITH REAL DISCORD: create Discord app → set app_id → run `./bin/picord --debug run` with Discord running, capture real handshake/SET_ACTIVITY behavior.
+2. Cache compiled regexes in `profile.Manager`.
+3. Add timestamps support (`start_time`) across config, GUI, CLI, and RPC payload.
+4. Keep README and HANDOFF updated as architecture changes.
 
 ---
 
