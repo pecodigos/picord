@@ -20,10 +20,11 @@ type CatalogConfig struct {
 }
 
 type ImageConfig struct {
-	Mode            string `yaml:"mode" json:"mode"`
-	CacheEnabled    bool   `yaml:"cache_enabled" json:"cache_enabled"`
-	MaxCacheMB      int    `yaml:"max_cache_mb" json:"max_cache_mb"`
-	GenericAssetKey string `yaml:"generic_asset_key" json:"generic_asset_key"`
+	Mode             string `yaml:"mode" json:"mode"`
+	CacheEnabled     bool   `yaml:"cache_enabled" json:"cache_enabled"`
+	MaxCacheMB       int    `yaml:"max_cache_mb" json:"max_cache_mb"`
+	GenericAssetKey  string `yaml:"generic_asset_key" json:"generic_asset_key"`
+	ExternalValidated bool  `yaml:"external_validated" json:"external_validated"`
 }
 
 type AppConfig struct {
@@ -51,10 +52,11 @@ var defaultConfig = AppConfig{
 		RefreshHours: 24,
 	},
 	Images: ImageConfig{
-		Mode:            "generic",
-		CacheEnabled:    true,
-		MaxCacheMB:      512,
-		GenericAssetKey: "picord_game",
+		Mode:              "generic",
+		CacheEnabled:      true,
+		MaxCacheMB:        512,
+		GenericAssetKey:   "picord_game",
+		ExternalValidated: false,
 	},
 }
 

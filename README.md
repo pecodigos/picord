@@ -156,9 +156,23 @@ Picord distinguishes between **catalog images** (for the UI and metadata) and **
 |------|----------|--------|
 | `generic` | Always uses `generic_asset_key` (e.g., `picord_game`) | Safest |
 | `asset_key` | Uses profile `large_image` or catalog `discord_asset_key`, falls back to generic | Safe if assets are uploaded |
-| `external_url` | Uses catalog `image_url` directly in the RPC payload | **Unvalidated** — may not work with Discord |
+| `external_url` | Uses catalog `image_url` directly in the RPC payload | **Requires live validation** before enabling |
 
-**Important:** `external_url` mode has not been validated against a live Discord client. Use `picord debug-rpc-image --app-id <ID> --external-url <URL>` to test before enabling it.
+**Important:** `external_url` mode is gated by `images.external_validated`. To enable it:
+
+1. Test an external URL against your live Discord client:
+   ```bash
+   picord debug-rpc-image --app-id <YOUR_APP_ID> --external-url https://cdn.akamai.steamstatic.com/steam/apps/620/header.jpg
+   ```
+2. If the image appears in Discord, set in your config:
+   ```yaml
+   images:
+     mode: external_url
+     external_validated: true
+   ```
+3. Restart Picord.
+
+Without `external_validated: true`, `external_url` mode falls back to `generic`.
 
 ### Catalog CLI
 

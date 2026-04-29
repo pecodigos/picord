@@ -187,7 +187,7 @@ func runDaemon(debug bool) int {
 			imgResolver = catalog.ImageResolver{
 				Mode:            catalog.ImageMode(cfg.Images.Mode),
 				GenericAssetKey: cfg.Images.GenericAssetKey,
-				ExternalEnabled: false, // only enabled after live validation
+				ExternalEnabled: cfg.Images.ExternalValidated,
 			}
 			if cfg.Catalog.AutoRefresh {
 				sources, err := catalog.BuildSources(cfg.Catalog.Sources)
@@ -208,7 +208,7 @@ func runDaemon(debug bool) int {
 			imgResolver = catalog.ImageResolver{
 				Mode:            catalog.ImageMode(newCfg.Images.Mode),
 				GenericAssetKey: newCfg.Images.GenericAssetKey,
-				ExternalEnabled: false,
+				ExternalEnabled: newCfg.Images.ExternalValidated,
 			}
 		}
 		log.Println("Config auto-reloaded")
@@ -384,10 +384,11 @@ func defaultConfig() config.AppConfig {
 			RefreshHours: 24,
 		},
 		Images: config.ImageConfig{
-			Mode:            "generic",
-			CacheEnabled:    true,
-			MaxCacheMB:      512,
-			GenericAssetKey: "picord_game",
+			Mode:              "generic",
+			CacheEnabled:      true,
+			MaxCacheMB:        512,
+			GenericAssetKey:   "picord_game",
+			ExternalValidated: false,
 		},
 	}
 }

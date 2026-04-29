@@ -288,6 +288,11 @@ func cmdDebugRPCImage(args []string) int {
 		return 1
 	}
 	fmt.Println("Activity set. Check Discord. Press Ctrl+C to clear and exit.")
+	if *externalURL != "" {
+		fmt.Println("\nIf the image appears correctly in Discord, enable it permanently by setting")
+		fmt.Println("  images.external_validated: true")
+		fmt.Println("in your picord config and restarting.")
+	}
 
 	// Wait for interrupt
 	sigCh := make(chan os.Signal, 1)
