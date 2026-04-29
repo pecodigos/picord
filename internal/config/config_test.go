@@ -13,9 +13,10 @@ func TestLoadSaveRoundTrip(t *testing.T) {
 	path := filepath.Join(dir, "config.yaml")
 
 	cfg := AppConfig{
-		AppID:        "123456",
-		PollInterval: 5,
-		WebPort:      8080,
+		AppID:            "123456",
+		PollInterval:     5,
+		WebPort:          8080,
+		ScanAllProcesses: false,
 		Profiles: []profile.Profile{
 			{Name: "test", Enabled: true, Priority: 5, Match: profile.MatchRule{Type: profile.MatchProcessName, Value: "firefox"}},
 		},
@@ -39,6 +40,9 @@ func TestLoadSaveRoundTrip(t *testing.T) {
 	if loaded.WebPort != cfg.WebPort {
 		t.Errorf("web_port mismatch: got %d, want %d", loaded.WebPort, cfg.WebPort)
 	}
+	if loaded.ScanAllProcesses != cfg.ScanAllProcesses {
+		t.Errorf("scan_all_processes mismatch: got %v, want %v", loaded.ScanAllProcesses, cfg.ScanAllProcesses)
+	}
 	if len(loaded.Profiles) != 1 || loaded.Profiles[0].Name != "test" {
 		t.Errorf("profiles mismatch: got %+v", loaded.Profiles)
 	}
@@ -61,6 +65,45 @@ func TestLoad_DefaultsOnMissingFile(t *testing.T) {
 	}
 	if cfg.AppID != "" {
 		t.Errorf("expected empty app_id, got %q", cfg.AppID)
+	}
+	if !cfg.ScanAllProcesses {
+		t.Error("expected default scan_all_processes to be true")
+	}
+}
+
+func TestLoad_PartialConfigKeepsScanAllDefault(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "config.yaml")
+
+	if err := os.WriteFile(path, []byte("app_id: abc123\n"), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	cfg, err := Load(path)
+	if err != nil {
+		t.Fatalf("load failed: %v", err)
+	}
+
+	if !cfg.ScanAllProcesses {
+		t.Error("expected omitted scan_all_processes to default to true")
+	}
+}
+
+func TestLoad_ExplicitScanAllFalse(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "config.yaml")
+
+	if err := os.WriteFile(path, []byte("scan_all_processes: false\n"), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	cfg, err := Load(path)
+	if err != nil {
+		t.Fatalf("load failed: %v", err)
+	}
+
+	if cfg.ScanAllProcesses {
+		t.Error("expected explicit scan_all_processes false to be preserved")
 	}
 }
 

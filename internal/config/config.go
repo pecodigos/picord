@@ -13,17 +13,19 @@ import (
 )
 
 type AppConfig struct {
-	AppID        string            `yaml:"app_id" json:"app_id"`
-	PollInterval int               `yaml:"poll_interval" json:"poll_interval"`
-	WebPort      int               `yaml:"web_port" json:"web_port"`
-	Profiles     []profile.Profile `yaml:"profiles" json:"profiles"`
+	AppID            string            `yaml:"app_id" json:"app_id"`
+	PollInterval     int               `yaml:"poll_interval" json:"poll_interval"`
+	WebPort          int               `yaml:"web_port" json:"web_port"`
+	ScanAllProcesses bool              `yaml:"scan_all_processes" json:"scan_all_processes"`
+	Profiles         []profile.Profile `yaml:"profiles" json:"profiles"`
 }
 
 var defaultConfig = AppConfig{
-	AppID:        "",
-	PollInterval: 2,
-	WebPort:      17970,
-	Profiles:     []profile.Profile{},
+	AppID:            "",
+	PollInterval:     2,
+	WebPort:          17970,
+	ScanAllProcesses: true,
+	Profiles:         []profile.Profile{},
 }
 
 type Manager struct {
