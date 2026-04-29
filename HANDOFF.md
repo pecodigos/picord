@@ -3,7 +3,7 @@
 > **Date:** 2026-04-29  
 > **Branch:** \`master\`  
 > **Go:** 1.21+  
-> **Status:** Builds, \`go test ./...\` passes (42 tests), \`go vet\` clean.
+> **Status:** Builds, \`go test ./...\` passes (46 tests), \`go vet\` clean.
 
 ---
 
@@ -106,13 +106,13 @@ go vet ./...
 
 1. Parse \`--debug\` flag → \`setupDebugLogging()\` (stdout + file)
 2. \`config.Load(path)\` → reads \`~/.config/picord/config.yaml\` (creates defaults if missing)
-3. \`rpc.NewClient(cfg.AppID)\` → discovers Discord IPC socket, dials Unix, handshake. **May fail** if Discord not running; daemon continues regardless.
+3. \`newRPCManager(cfg.AppID)\` → creates an \`rpcManager\` wrapper. **Initial connect may fail** if Discord not running; daemon continues regardless.
 4. Create \`server.AppState\` (autoDetect=true)
 5. \`profile.NewManager(userProfiles, defaultProfiles)\` → merges defaults first, then user overrides by name
 6. \`config.NewManager(path, onChange)\` → fsnotify watcher on config dir
 7. Create \`server.Server\`, wire callbacks:
-   - OnOverrideSet → setRichPresence(client, p, nil) + tray status
-   - OnOverrideClear → client.ClearActivity() + tray "Idle"
+   - OnOverrideSet → setRichPresence(rpcMgr, p, nil) + tray status
+   - OnOverrideClear → rpcMgr.clearActivity() + tray "Idle"
    - OnAutoDetectSet → update state, clear activity if disabled
    - OnReloadConfig → reload config from disk
    - OnProfilesSaved → configMgr.UpdateProfiles() (writes YAML)
@@ -122,7 +122,7 @@ go vet ./...
 11. Signal handler (SIGINT/SIGTERM) → cleanup() → os.Exit(0)
 12. tray.Run() → **blocks main goroutine**
 
-**Cleanup order:** close reconnectStopCh → monitor.Stop() → client.ClearActivity() + Close() → httpServer.Close() → configMgr.Close()
+**Cleanup order:** close reconnectStopCh → monitor.Stop() → rpcMgr.close() → httpServer.Close() → configMgr.Close()
 
 ### 5.2 Discord IPC Protocol (internal/rpc/client.go)
 
@@ -155,6 +155,18 @@ func (c *Client) Close() error
 
 **Thread safety:** sendCommand, Reconnect, IsConnected, Close all hold c.mu. Safe for concurrent use.
 
+**rpcManager wrapper (cmd/picord/main.go):**
+```go
+type rpcManager struct {
+    mu     sync.Mutex
+    client *rpc.Client
+    appID  string
+}
+```
+- `connect()` creates a new `rpc.Client` via injectable `rpcNewClient` when nil or disconnected.
+- `isConnected()`, `setActivity()`, `clearActivity()`, `close()` are thread-safe.
+- Background reconnect goroutine now calls `rpcMgr.connect()` when not connected, so Picord can start before Discord and connect later.
+
 ### 5.3 Process Monitor (internal/monitor/monitor.go)
 
 Scans /proc every cfg.PollInterval seconds (default 2). Default mode (`scan_all_processes: true`) includes every numeric `/proc/<pid>` entry. Legacy mode (`scan_all_processes: false`) only includes processes with fd symlinks containing "discord-ipc".
@@ -165,6 +177,7 @@ var procRoot = "/proc"  // overridden in tests
 type Monitor struct {
     interval time.Duration
     scanAll  bool
+    debug    bool
     stopCh   chan struct{}
     callback func([]profile.DetectedProcess)
 }
@@ -175,7 +188,7 @@ readProcName(pid) resolution:
 2. Fallback to /proc/<pid>/comm (kernel thread name, max 15 chars).
 3. Fallback to "unknown".
 
-Debug logging: when --debug, logs every detected process with PID, Name, WindowTitle.
+Debug logging: per-process and summary logs are gated behind `m.debug` (set via `monitor.SetDebug(bool)`). Non-debug mode is silent to avoid flooding systemd logs.
 
 ### 5.4 Window Title Detection (internal/monitor/window_linux.go)
 
@@ -244,13 +257,13 @@ func FindBestMatch(profiles []Profile, processes []DetectedProcess) (*Profile, *
 type Manager struct {
     mu       sync.RWMutex
     profiles []Profile
-    byName   map[string]*Profile
+    byName   map[string]int
 }
 ```
 
 Key methods: NewManager(), MergeDefaults(), MergeUser(), ReplaceUser(), Add(), Delete(), All(), Get(), Match(), SerializeProfiles(), DeserializeProfiles().
 
-Important: ReplaceUser() was fixed from a deadlock. It uses mergeUserUnlocked() (private, no lock) after acquiring the mutex.
+Important: `byName` stores **indices**, not pointers. It is rebuilt after every `sortByPriority()` and `Delete()` to avoid stale pointers after slice reallocations or element swaps.
 
 Profiles are always kept sorted by priority (desc) then Match.Value length (desc).
 
@@ -384,14 +397,14 @@ profiles:                       # Optional custom profiles
 
 ## 8. Test Coverage
 
-42 tests across 6 packages. Run: go test ./...
+46 tests across 6 packages. Run: go test ./...
 
 | File | Tests | What they cover |
 |------|-------|-----------------|
-| cmd/picord/main_test.go | 1 | Fallback default config keeps scan-all enabled |
+| cmd/picord/main_test.go | 4 | Fallback default config; rpcManager connect/reconnect/close with mock Unix socket |
 | internal/rpc/client_test.go | 4 | Mock Discord IPC socket: handshake, SET_ACTIVITY frame format, reconnect, close |
 | profile/matcher_test.go | 8 | process_name exact+ci, window_title substring, regex, invalid regex, disabled, FindBestMatch priority + tie-breaker |
-| profile/manager_test.go | 8 | Merge defaults+user, user overrides default, add, update, delete, sort, match, ReplaceUser keeps defaults |
+| profile/manager_test.go | 9 | Merge defaults+user, user overrides default, add, update, delete, sort, match, ReplaceUser, stable after sort+delete |
 | profile/render_test.go | 5 | No templates, {process_name}, {window_title}, mixed, empty window title |
 | config/config_test.go | 6 | Load/save round-trip, defaults on missing file, scan_all_processes default/false handling, validation clamping, invalid YAML error |
 | monitor/monitor_test.go | 7 | Mock /proc: IPC-only scan, all-process scan, ScanNow options, dedup, Start/Stop no panic |
@@ -401,7 +414,7 @@ profiles:                       # Optional custom profiles
 - internal/server/server.go — needs HTTP test server
 - internal/tray/tray.go — GUI, hard to unit test
 - cmd/picord/cli.go — needs mock HTTP server
-- cmd/picord/main.go — mostly integration-only (defaultConfig helper covered)
+- cmd/picord/main.go — mostly integration-only (defaultConfig helper covered; rpcManager tested via main_test.go)
 
 ---
 
@@ -418,6 +431,18 @@ profiles:                       # Optional custom profiles
 - `scan_all_processes` now defaults to true and scans every numeric `/proc/<pid>` entry.
 - `scan_all_processes: false` keeps the legacy Discord-IPC-only scan for narrower detection.
 - Matching still uses the same profile semantics: process_name exact match, window_title substring, regex on process name.
+
+### RESOLVED: Profile manager stale pointers
+- `byName` was `map[string]*Profile` pointing into a mutable slice. After sort/append/delete, pointers could become stale.
+- Fixed: `byName` is now `map[string]int` (index into slice). Rebuilt after every `sortByPriority()` and `Delete()`.
+
+### RESOLVED: Discord startup-order reconnect
+- If Discord was not running at daemon startup, `rpcClient` stayed nil and the reconnect goroutine never created a client later.
+- Fixed: Replaced raw `*rpc.Client` with `rpcManager` wrapper that can `connect()` when nil. Background goroutine now calls `rpcMgr.connect()` when not connected.
+
+### RESOLVED: Noisy monitor logging
+- With `scan_all_processes: true`, the monitor logged every detected process every 2 seconds.
+- Fixed: Per-process and summary logs are now gated behind `monitor.SetDebug(true)`.
 
 ### MEDIUM: Regex compiled on every match
 - matcher.go:37 calls regexp.Compile() every 2 seconds per regex profile.
@@ -447,7 +472,7 @@ profiles:                       # Optional custom profiles
 | Feature | Status |
 |---------|--------|
 | Compilation | ✅ Go 1.21+ |
-| Tests | ✅ 42/42 pass |
+| Tests | ✅ 46/46 pass |
 | go vet | ✅ Clean |
 | CLI commands | ✅ All work |
 | Debug logging | ✅ --debug flag |
@@ -456,7 +481,7 @@ profiles:                       # Optional custom profiles
 | Profile matching | ✅ process_name, window_title, regex |
 | Template variables | ✅ {process_name}, {window_title} |
 | Window title detection | ✅ Hyprland, Sway, X11 (best-effort) |
-| Auto-reconnect | ✅ Reconnect() + background ticker |
+| Auto-reconnect | ✅ Reconnect() + background ticker; can start before Discord |
 | System tray | ⚠️ Depends on compositor SNI support |
 | Actual Discord RPC | ⚠️ Mock socket covered; needs live Discord validation |
 | Pre-emptive matching | ✅ scan_all_processes default covers ordinary apps/games |
@@ -489,20 +514,19 @@ Design choices:
 ### Phase 2. RPC client tests (complete)
 Created `internal/rpc/client_test.go` with a mock Unix socket server implementing the Discord protocol. Covered handshake, SET_ACTIVITY frame format, reconnect, and close. Live Discord validation remains the next RPC step.
 
-### Phase 3. Follow-up improvements
-1. TEST WITH REAL DISCORD: create Discord app → set app_id → run `./bin/picord --debug run` with Discord running, capture real handshake/SET_ACTIVITY behavior.
-2. Cache compiled regexes in `profile.Manager`.
-3. Add timestamps support (`start_time`) across config, GUI, CLI, and RPC payload.
-4. Keep README and HANDOFF updated as architecture changes.
+### Phase 3. Stabilization (complete)
+Fixed high-priority prerequisites before scaling to a catalog:
+1. ✅ Fix `profile.Manager` indexing: changed `byName map[string]*Profile` to `map[string]int` and rebuild after sort/delete. Added `TestManager_StableAfterSortAndDelete`.
+2. ✅ Fix Discord startup-order reconnect: replaced raw `*rpc.Client` with `rpcManager` wrapper that can `connect()` when nil. Background goroutine now creates a client if Discord starts after Picord. Added mock-socket tests for `rpcManager`.
+3. ✅ Gate noisy monitor logging: per-process and summary logs now require `monitor.SetDebug(true)`.
 
 ### Phase 4. Rich game catalog plan (next)
 A detailed implementation plan for Kimi K2.6 is saved at `docs/plans/2026-04-29-kimi-rich-game-catalog.md`.
 
-High-priority prerequisites identified by the plan:
-1. Fix Discord startup-order reconnect: if Discord is missing at daemon startup, `rpcClient` remains nil and current reconnect logic never creates a client later.
-2. Fix `profile.Manager` indexing: `byName map[string]*Profile` points into a mutable/sorted slice, which can leave stale or wrong pointers after append/sort/delete.
-3. Gate or remove all-process per-PID monitor logging before adding catalog detection; it can flood logs every poll.
-4. Validate Discord image behavior with a real client before relying on catalog image URLs in Rich Presence.
+Remaining prerequisites before catalog build-out:
+1. Validate Discord image behavior with a real client before relying on catalog image URLs in Rich Presence.
+2. Cache compiled regexes in `profile.Manager`.
+3. Add timestamps support (`start_time`) across config, GUI, CLI, and RPC payload.
 
 The catalog plan favors local/installed metadata first, public metadata second, and lazy image caching: do not download every image or try to upload every game image to one Discord application.
 
