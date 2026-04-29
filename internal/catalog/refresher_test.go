@@ -5,6 +5,8 @@ import (
 	"path/filepath"
 	"testing"
 	"time"
+
+	"github.com/pecodigos/picord/internal/config"
 )
 
 type fakeSource struct {
@@ -81,5 +83,15 @@ func TestBuildSources_Unknown(t *testing.T) {
 	_, err := BuildSources([]string{"unknown"})
 	if err == nil {
 		t.Fatal("expected error for unknown source")
+	}
+}
+
+func TestBuildSources_DefaultConfig(t *testing.T) {
+	sources, err := BuildSources(config.DefaultCatalogSources)
+	if err != nil {
+		t.Fatalf("BuildSources with DefaultCatalogSources failed: %v", err)
+	}
+	if len(sources) == 0 {
+		t.Fatal("expected at least one source from default config")
 	}
 }

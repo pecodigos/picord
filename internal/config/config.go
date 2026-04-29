@@ -36,6 +36,8 @@ type AppConfig struct {
 	Images           ImageConfig       `yaml:"images" json:"images"`
 }
 
+var DefaultCatalogSources = []string{"steam_local", "desktop"}
+
 var defaultConfig = AppConfig{
 	AppID:            "",
 	PollInterval:     2,
@@ -45,7 +47,7 @@ var defaultConfig = AppConfig{
 	Catalog: CatalogConfig{
 		Enabled:      true,
 		AutoRefresh:  true,
-		Sources:      []string{"steam_local", "lutris_local", "desktop"},
+		Sources:      DefaultCatalogSources,
 		RefreshHours: 24,
 	},
 	Images: ImageConfig{

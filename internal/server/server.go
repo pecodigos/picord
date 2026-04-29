@@ -344,7 +344,11 @@ func (srv *Server) handleCatalogSearch(w http.ResponseWriter, r *http.Request) {
 		writeError(w, err.Error(), 500)
 		return
 	}
-	writeJSON(w, results)
+	resp := make([]catalogEntryResponse, len(results))
+	for i, e := range results {
+		resp[i] = entryToResponse(e)
+	}
+	writeJSON(w, resp)
 }
 
 func (srv *Server) handleCatalogEntry(w http.ResponseWriter, r *http.Request) {
@@ -370,7 +374,25 @@ func (srv *Server) handleCatalogEntry(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "not found", 404)
 		return
 	}
-	writeJSON(w, entry)
+	writeJSON(w, entryToResponse(*entry))
+}
+
+type catalogEntryResponse struct {
+	ID          string `json:"id"`
+	Source      string `json:"source"`
+	Title       string `json:"title"`
+	ReleaseYear int    `json:"release_year,omitempty"`
+	ImageURL    string `json:"image_url,omitempty"`
+}
+
+func entryToResponse(e catalog.Entry) catalogEntryResponse {
+	return catalogEntryResponse{
+		ID:          e.ID,
+		Source:      e.Source,
+		Title:       e.Title,
+		ReleaseYear: e.ReleaseYear,
+		ImageURL:    e.ImageURL,
+	}
 }
 
 type refreshRequest struct {

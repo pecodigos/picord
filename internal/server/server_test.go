@@ -72,7 +72,7 @@ func TestHandleCatalogSearch(t *testing.T) {
 	if rr.Code != 200 {
 		t.Fatalf("expected 200, got %d: %s", rr.Code, rr.Body.String())
 	}
-	var results []catalog.Entry
+	var results []catalogEntryResponse
 	if err := json.Unmarshal(rr.Body.Bytes(), &results); err != nil {
 		t.Fatalf("decode: %v", err)
 	}
@@ -123,7 +123,7 @@ func TestHandleCatalogEntry(t *testing.T) {
 	if rr.Code != 200 {
 		t.Fatalf("expected 200, got %d: %s", rr.Code, rr.Body.String())
 	}
-	var entry catalog.Entry
+	var entry catalogEntryResponse
 	if err := json.Unmarshal(rr.Body.Bytes(), &entry); err != nil {
 		t.Fatalf("decode: %v", err)
 	}

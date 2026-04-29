@@ -275,17 +275,17 @@ func runDaemon(debug bool) int {
 		}
 
 		// Try catalog match if no profile matched and catalog is enabled.
-		if catalogMatcher != nil && proc != nil {
+		if catalogMatcher != nil {
 			ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
-			catResult := catalogMatcher.Match(ctx, *proc)
+			catResult, catProc := findBestCatalogMatch(ctx, catalogMatcher, procs)
 			cancel()
-			if catResult != nil {
+			if catResult != nil && catProc != nil {
 				catProfile := catResult.ToProfile(imgResolver)
 				if currentProfile == nil || currentProfile.Name != catProfile.Name {
-					log.Printf("[presence] matched catalog=%q process=%q reason=%s", catProfile.Name, proc.Name, catResult.Reason)
+					log.Printf("[presence] matched catalog=%q process=%q reason=%s", catProfile.Name, catProc.Name, catResult.Reason)
 					currentProfile = &catProfile
-					state.SetActive(catProfile.Name, proc.Name)
-					setRichPresence(rpcMgr, &catProfile, proc)
+					state.SetActive(catProfile.Name, catProc.Name)
+					setRichPresence(rpcMgr, &catProfile, catProc)
 					tray.UpdateStatus(catProfile.Name)
 				}
 				return
@@ -390,7 +390,7 @@ func defaultConfig() config.AppConfig {
 		Catalog: config.CatalogConfig{
 			Enabled:      true,
 			AutoRefresh:  true,
-			Sources:      []string{"steam_local", "lutris_local", "desktop"},
+			Sources:      config.DefaultCatalogSources,
 			RefreshHours: 24,
 		},
 		Images: config.ImageConfig{
@@ -400,6 +400,25 @@ func defaultConfig() config.AppConfig {
 			GenericAssetKey: "picord_game",
 		},
 	}
+}
+
+func findBestCatalogMatch(
+	ctx context.Context,
+	matcher *catalog.Matcher,
+	procs []profile.DetectedProcess,
+) (*catalog.MatchResult, *profile.DetectedProcess) {
+	var best *catalog.MatchResult
+	var bestProc *profile.DetectedProcess
+	for i := range procs {
+		result := matcher.Match(ctx, procs[i])
+		if result != nil {
+			if best == nil || result.Confidence > best.Confidence {
+				best = result
+				bestProc = &procs[i]
+			}
+		}
+	}
+	return best, bestProc
 }
 
 func setRichPresence(rm *rpcManager, p *profile.Profile, proc *profile.DetectedProcess) {

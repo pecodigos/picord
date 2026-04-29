@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"encoding/binary"
 	"encoding/json"
 	"errors"
@@ -10,6 +11,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/pecodigos/picord/internal/catalog"
+	"github.com/pecodigos/picord/internal/profile"
 	"github.com/pecodigos/picord/internal/rpc"
 )
 
@@ -221,4 +224,65 @@ func TestRPCManager_RetriesAfterInitialFailureWithMockSocket(t *testing.T) {
 	}
 
 	rm.close()
+}
+
+func TestDefaultConfigSources(t *testing.T) {
+	cfg := defaultConfig()
+	for _, s := range cfg.Catalog.Sources {
+		if s == "lutris_local" {
+			t.Fatal("default config should not include unsupported lutris_local source")
+		}
+	}
+}
+
+func TestFindBestCatalogMatch(t *testing.T) {
+	dir := t.TempDir()
+	store, err := catalog.Open(filepath.Join(dir, "catalog.db"))
+	if err != nil {
+		t.Fatalf("Open failed: %v", err)
+	}
+	defer store.Close()
+
+	ctx := context.Background()
+	_ = store.UpsertEntry(ctx, catalog.Entry{
+		ID: "steam:620", Source: "steam", SourceID: "620", Kind: catalog.EntryKindGame,
+		Title: "Portal 2", NormalizedTitle: catalog.NormalizeTitle("Portal 2"),
+	}, []catalog.Alias{
+		{EntryID: "steam:620", Kind: catalog.AliasSteamAppID, Value: "620", Normalized: "620", Confidence: 100},
+	})
+
+	matcher := catalog.NewMatcher(store)
+
+	procs := []profile.DetectedProcess{
+		{PID: 1, Name: "someproc"},
+		{PID: 2, Name: "portal2", SteamAppID: "620"},
+	}
+	result, proc := findBestCatalogMatch(ctx, matcher, procs)
+	if result == nil {
+		t.Fatal("expected catalog match")
+	}
+	if result.Entry.Title != "Portal 2" {
+		t.Errorf("expected Portal 2, got %q", result.Entry.Title)
+	}
+	if proc == nil || proc.PID != 2 {
+		t.Errorf("expected proc PID 2, got %+v", proc)
+	}
+}
+
+func TestFindBestCatalogMatch_NoMatch(t *testing.T) {
+	dir := t.TempDir()
+	store, err := catalog.Open(filepath.Join(dir, "catalog.db"))
+	if err != nil {
+		t.Fatalf("Open failed: %v", err)
+	}
+	defer store.Close()
+
+	matcher := catalog.NewMatcher(store)
+	procs := []profile.DetectedProcess{
+		{PID: 1, Name: "unknown"},
+	}
+	result, proc := findBestCatalogMatch(context.Background(), matcher, procs)
+	if result != nil || proc != nil {
+		t.Errorf("expected no match, got result=%v proc=%v", result, proc)
+	}
 }
