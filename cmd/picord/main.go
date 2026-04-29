@@ -162,6 +162,7 @@ func runDaemon(debug bool) int {
 	var catalogStore *catalog.Store
 	var catalogMatcher *catalog.Matcher
 	var imgResolver catalog.ImageResolver
+	var catalogRefresher *catalog.Refresher
 	if cfg.Catalog.Enabled {
 		dataDir := os.Getenv("XDG_DATA_HOME")
 		if dataDir == "" {
@@ -182,6 +183,15 @@ func runDaemon(debug bool) int {
 				Mode:            catalog.ImageMode(cfg.Images.Mode),
 				GenericAssetKey: cfg.Images.GenericAssetKey,
 				ExternalEnabled: false, // only enabled after live validation
+			}
+			if cfg.Catalog.AutoRefresh {
+				sources, err := catalog.BuildSources(cfg.Catalog.Sources)
+				if err != nil {
+					log.Printf("Warning: invalid catalog sources: %v", err)
+				} else {
+					catalogRefresher = catalog.NewRefresher(catalogStore, sources, time.Duration(cfg.Catalog.RefreshHours)*time.Hour)
+					catalogRefresher.Start()
+				}
 			}
 		}
 	}
@@ -318,7 +328,7 @@ func runDaemon(debug bool) int {
 	signal.Notify(sigCh, syscall.SIGINT, syscall.SIGTERM)
 	go func() {
 		<-sigCh
-		cleanup(rpcMgr, httpServer, configMgr, procMonitor, reconnectStopCh, catalogStore)
+		cleanup(rpcMgr, httpServer, configMgr, procMonitor, reconnectStopCh, catalogStore, catalogRefresher)
 		os.Exit(0)
 	}()
 
@@ -353,7 +363,7 @@ func runDaemon(debug bool) int {
 			tray.UpdateStatus("Idle")
 		},
 		Quit: func() {
-			cleanup(rpcMgr, httpServer, configMgr, procMonitor, reconnectStopCh, catalogStore)
+			cleanup(rpcMgr, httpServer, configMgr, procMonitor, reconnectStopCh, catalogStore, catalogRefresher)
 			os.Exit(0)
 		},
 	})
@@ -440,12 +450,15 @@ func setRichPresence(rm *rpcManager, p *profile.Profile, proc *profile.DetectedP
 	}
 }
 
-func cleanup(rm *rpcManager, httpServer *http.Server, configMgr *config.Manager, mon *monitor.Monitor, reconnectStopCh chan struct{}, catalogStore *catalog.Store) {
+func cleanup(rm *rpcManager, httpServer *http.Server, configMgr *config.Manager, mon *monitor.Monitor, reconnectStopCh chan struct{}, catalogStore *catalog.Store, catalogRefresher *catalog.Refresher) {
 	if reconnectStopCh != nil {
 		close(reconnectStopCh)
 	}
 	if mon != nil {
 		mon.Stop()
+	}
+	if catalogRefresher != nil {
+		catalogRefresher.Stop()
 	}
 	rm.close()
 	if httpServer != nil {
