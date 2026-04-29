@@ -5,7 +5,11 @@
 > **Go:** 1.21+  
 > **Status:** Builds; `go test -count=1 ./...`, `go vet ./...`, `go test -race ./...`, `make build`, and diff checks pass after Kimi's third stabilization pass. Latest next-step plan: `docs/plans/2026-04-29-post-kimi-third-pass-stabilization.md`.
 >
-> **Current audit:** Kimi fixed several previous P0/P1 items, but the pass is not fully complete. Desired activity is now stored while initially disconnected; hostile-origin unsafe requests are rejected; profile edits preserve existing `Enabled`; catalog candidates are ranked against profile candidates; and `external_url` image mode is gated behind `images.external_validated`. Remaining priority work: built-in default profiles currently appear disabled by default, live Discord restart/stale-socket replay remains incomplete, unsafe API writes still need real token/content-type/JSON-error protection, config reload semantics are partial, and profile rename/default-copy behavior still needs hardening.
+> **Resolved in latest commits:**
+> - P0-A: Built-in default profiles are now enabled by default (`DefaultProfiles()` sets `Enabled=true`).
+> - P0-B: RPC client marks itself closed on write/read errors; `setRichPresence` avoids duplicate `SET_ACTIVITY` after reconnect.
+> - P0-C: Local API write endpoints require `X-Picord-Token` header; token is injected into `index.html` for the web UI and persisted for CLI use; cross-origin unsafe requests rejected; bad Content-Type returns 415; JSON error bodies everywhere.
+> - P1-A: All config reload paths (watcher, GUI, tray) now call a unified `applyConfig` function using `ReplaceUser` (deleted profiles are removed); unknown catalog sources are skipped with a warning instead of failing the whole build; restart-only field changes are logged.
 
 ---
 
@@ -15,7 +19,7 @@ Picord is a Linux daemon that auto-sets Discord Rich Presence. By default it sca
 
 **Current constraint:** Picord still needs a running Discord client and a valid Discord application client ID before it can publish Rich Presence. The scanner no longer depends on games opening Discord IPC sockets.
 
-**Current status:** Kimi's latest pass improved the runtime path but did not close every stabilization item. The latest plan is `docs/plans/2026-04-29-post-kimi-third-pass-stabilization.md`; start with restoring built-in default profiles, then RPC stale-connection replay, then local write protection.
+**Current status:** P0 items from the third-pass plan are complete. P1 items remaining: profile edit/rename/default-copy lifecycle, explicit candidate ranking metadata, source-aware catalog-created profiles, catalog refresh ownership, CLI HTTP-contract tests. P2 items: live Discord validation, frontend CSP, documentation cleanup.
 
 ---
 
