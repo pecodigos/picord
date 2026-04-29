@@ -1,16 +1,16 @@
 package tray
 
 import (
-	"bytes"
-	"image"
-	"image/color"
-	"image/png"
+	_ "embed"
 	"os/exec"
 
 	"github.com/energye/systray"
 
 	"github.com/pecodigos/picord/internal/profile"
 )
+
+//go:embed icon.png
+var iconData []byte
 
 type Actions struct {
 	OpenGUI       func()
@@ -22,38 +22,11 @@ type Actions struct {
 }
 
 var (
-	iconData       []byte
 	autoDetectItem *systray.MenuItem
 	statusItem     *systray.MenuItem
 )
 
-func generateIcon() []byte {
-	img := image.NewRGBA(image.Rect(0, 0, 32, 32))
-
-	purple := color.RGBA{114, 137, 218, 255}
-	dark := color.RGBA{26, 26, 46, 255}
-
-	for y := 0; y < 32; y++ {
-		for x := 0; x < 32; x++ {
-			dx, dy := float64(x-16), float64(y-16)
-			dist := dx*dx + dy*dy
-			if dist < 144 {
-				img.Set(x, y, purple)
-			} else if dist < 196 {
-				img.Set(x, y, dark)
-			} else {
-				img.Set(x, y, color.RGBA{0, 0, 0, 0})
-			}
-		}
-	}
-
-	var buf bytes.Buffer
-	png.Encode(&buf, img)
-	return buf.Bytes()
-}
-
 func Run(actions Actions) {
-	iconData = generateIcon()
 	systray.Run(func() { onReady(actions) }, func() {
 		if actions.Quit != nil {
 			actions.Quit()

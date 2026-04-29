@@ -1,0 +1,10 @@
+[Desktop Entry]
+Name=Picord
+Comment=Universal Discord Rich Presence Manager
+Exec=picord
+Icon=picord
+Type=Application
+Categories=Utility;
+Terminal=false
+StartupNotify=false
+X-GNOME-Autostart-enabled=true

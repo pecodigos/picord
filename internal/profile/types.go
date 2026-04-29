@@ -10,7 +10,6 @@ const (
 
 type Profile struct {
 	Name     string    `yaml:"name" json:"name"`
-	AppID    string    `yaml:"app_id,omitempty" json:"app_id,omitempty"`
 	Match    MatchRule `yaml:"match" json:"match"`
 	Activity Activity  `yaml:"activity" json:"activity"`
 	Priority int       `yaml:"priority" json:"priority"`
@@ -19,7 +18,7 @@ type Profile struct {
 	isDefault bool `yaml:"-" json:"-"`
 }
 
-func (p *Profile) IsDefault() bool   { return p.isDefault }
+func (p *Profile) IsDefault() bool  { return p.isDefault }
 func (p *Profile) SetDefault(v bool) { p.isDefault = v }
 
 type MatchRule struct {

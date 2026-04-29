@@ -20,7 +20,7 @@ type AppConfig struct {
 }
 
 var defaultConfig = AppConfig{
-	AppID:        "1354481585976385573",
+	AppID:        "",
 	PollInterval: 2,
 	WebPort:      17970,
 	Profiles:     []profile.Profile{},

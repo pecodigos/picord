@@ -101,7 +101,6 @@ function showAddProfile() {
   document.getElementById('mf-small-image').value = '';
   document.getElementById('mf-small-text').value = '';
   document.getElementById('mf-priority').value = '5';
-  document.getElementById('mf-app-id').value = '';
   document.getElementById('modal').classList.remove('hidden');
 }
 
@@ -120,7 +119,6 @@ async function editProfile(name) {
   document.getElementById('mf-small-image').value = p.activity?.small_image || '';
   document.getElementById('mf-small-text').value = p.activity?.small_text || '';
   document.getElementById('mf-priority').value = p.priority || 5;
-  document.getElementById('mf-app-id').value = p.app_id || '';
   document.getElementById('modal').classList.remove('hidden');
 }
 
@@ -146,7 +144,6 @@ document.getElementById('modal-form').addEventListener('submit', async (e) => {
       small_text: document.getElementById('mf-small-text').value,
     },
     priority: parseInt(document.getElementById('mf-priority').value) || 5,
-    app_id: document.getElementById('mf-app-id').value,
   };
 
   if (editName) {

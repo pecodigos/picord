@@ -56,7 +56,7 @@ func main() {
 	webServer.OnOverrideSet = func(p *profile.Profile) {
 		state.SetOverride(p)
 		if p != nil {
-			setRichPresence(rpcClient, p, cfg.AppID)
+			setRichPresence(rpcClient, p)
 			tray.UpdateStatus("Manual: " + p.Name)
 		}
 	}
@@ -109,9 +109,9 @@ func main() {
 			if currentProfile == nil || currentProfile.Name != match.Name {
 				currentProfile = match
 				state.SetActive(match.Name, proc.Name)
-				if rpcClient != nil {
-					setRichPresence(rpcClient, match, cfg.AppID)
-				}
+			if rpcClient != nil {
+				setRichPresence(rpcClient, match)
+			}
 				tray.UpdateStatus(match.Name)
 			}
 		} else if currentProfile != nil {
@@ -155,7 +155,7 @@ func main() {
 		SetOverride: func(p *profile.Profile) {
 			state.SetOverride(p)
 			if p != nil && rpcClient != nil {
-				setRichPresence(rpcClient, p, cfg.AppID)
+				setRichPresence(rpcClient, p)
 			}
 		},
 		ClearOverride: func() {
@@ -186,13 +186,13 @@ func configDirPath() string {
 
 func defaultConfig() config.AppConfig {
 	return config.AppConfig{
-		AppID:        "1354481585976385573",
+		AppID:        "",
 		PollInterval: 2,
 		WebPort:      17970,
 	}
 }
 
-func setRichPresence(client *rpc.Client, p *profile.Profile, defaultAppID string) {
+func setRichPresence(client *rpc.Client, p *profile.Profile) {
 	if client == nil {
 		return
 	}
