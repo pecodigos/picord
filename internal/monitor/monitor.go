@@ -16,6 +16,7 @@ var procRoot = "/proc"
 type Monitor struct {
 	interval time.Duration
 	scanAll  bool
+	debug    bool
 	stopCh   chan struct{}
 	callback func([]profile.DetectedProcess)
 }
@@ -31,6 +32,10 @@ func NewWithOptions(intervalSec int, scanAll bool, callback func([]profile.Detec
 		stopCh:   make(chan struct{}),
 		callback: callback,
 	}
+}
+
+func (m *Monitor) SetDebug(enabled bool) {
+	m.debug = enabled
 }
 
 func (m *Monitor) Start() {
@@ -51,7 +56,7 @@ func (m *Monitor) loop() {
 			return
 		case <-ticker.C:
 			procs := m.ScanNow()
-			if len(procs) > 0 {
+			if m.debug && len(procs) > 0 {
 				if m.scanAll {
 					log.Printf("[monitor] detected %d process(es)", len(procs))
 				} else {

@@ -10,13 +10,13 @@ import (
 type Manager struct {
 	mu       sync.RWMutex
 	profiles []Profile
-	byName   map[string]*Profile
+	byName   map[string]int
 }
 
 func NewManager(userProfiles []Profile, defaultProfiles []Profile) *Manager {
 	m := &Manager{
 		profiles: make([]Profile, 0),
-		byName:   make(map[string]*Profile),
+		byName:   make(map[string]int),
 	}
 	m.MergeDefaults(defaultProfiles)
 	m.MergeUser(userProfiles)
@@ -33,11 +33,12 @@ func (m *Manager) MergeDefaults(defaults []Profile) {
 			p := defaults[i]
 			if p.Enabled {
 				m.profiles = append(m.profiles, p)
-				m.byName[name] = &m.profiles[len(m.profiles)-1]
+				m.byName[name] = len(m.profiles) - 1
 			}
 		}
 	}
 	m.sortByPriority()
+	m.rebuildByName()
 }
 
 func (m *Manager) MergeUser(user []Profile) {
@@ -45,19 +46,20 @@ func (m *Manager) MergeUser(user []Profile) {
 	defer m.mu.Unlock()
 	m.mergeUserUnlocked(user)
 	m.sortByPriority()
+	m.rebuildByName()
 }
 
 func (m *Manager) mergeUserUnlocked(user []Profile) {
 	for i := range user {
 		name := user[i].Name
-		if existing, ok := m.byName[name]; ok {
-			*existing = user[i]
-			existing.Enabled = user[i].Enabled
+		if idx, ok := m.byName[name]; ok {
+			m.profiles[idx] = user[i]
+			m.profiles[idx].Enabled = user[i].Enabled
 		} else {
 			p := user[i]
 			if p.Enabled {
 				m.profiles = append(m.profiles, p)
-				m.byName[name] = &m.profiles[len(m.profiles)-1]
+				m.byName[name] = len(m.profiles) - 1
 			}
 		}
 	}
@@ -76,13 +78,18 @@ func (m *Manager) ReplaceUser(profiles []Profile) {
 	}
 
 	m.profiles = filtered
-	m.byName = make(map[string]*Profile, len(m.profiles))
-	for i := range m.profiles {
-		m.byName[m.profiles[i].Name] = &m.profiles[i]
-	}
+	m.rebuildByName()
 
 	m.mergeUserUnlocked(profiles)
 	m.sortByPriority()
+	m.rebuildByName()
+}
+
+func (m *Manager) rebuildByName() {
+	m.byName = make(map[string]int, len(m.profiles))
+	for i := range m.profiles {
+		m.byName[m.profiles[i].Name] = i
+	}
 }
 
 func (m *Manager) All() []Profile {
@@ -96,40 +103,39 @@ func (m *Manager) All() []Profile {
 func (m *Manager) Get(name string) *Profile {
 	m.mu.RLock()
 	defer m.mu.RUnlock()
-	return m.byName[name]
+	idx, ok := m.byName[name]
+	if !ok {
+		return nil
+	}
+	return &m.profiles[idx]
 }
 
 func (m *Manager) Add(p Profile) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 
-	if existing, ok := m.byName[p.Name]; ok {
-		*existing = p
-		existing.Enabled = p.Enabled
+	if idx, ok := m.byName[p.Name]; ok {
+		m.profiles[idx] = p
+		m.profiles[idx].Enabled = p.Enabled
 	} else {
 		p.Enabled = true
 		m.profiles = append(m.profiles, p)
-		m.byName[p.Name] = &m.profiles[len(m.profiles)-1]
+		m.byName[p.Name] = len(m.profiles) - 1
 	}
 	m.sortByPriority()
+	m.rebuildByName()
 }
 
 func (m *Manager) Delete(name string) bool {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 
-	idx := -1
-	for i := range m.profiles {
-		if m.profiles[i].Name == name {
-			idx = i
-			break
-		}
-	}
-	if idx < 0 {
+	idx, ok := m.byName[name]
+	if !ok {
 		return false
 	}
 	m.profiles = append(m.profiles[:idx], m.profiles[idx+1:]...)
-	delete(m.byName, name)
+	m.rebuildByName()
 	return true
 }
 

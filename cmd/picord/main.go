@@ -8,6 +8,7 @@ import (
 	"os"
 	"os/signal"
 	"path/filepath"
+	"sync"
 	"syscall"
 	"time"
 
@@ -27,7 +28,7 @@ func main() {
 		setupDebugLogging()
 	}
 
-	os.Exit(runCLI(args))
+	os.Exit(runCLI(args, debug))
 }
 
 func parseGlobalFlags(args []string) ([]string, bool) {
@@ -63,7 +64,72 @@ func setupDebugLogging() {
 	log.Println("Debug logging enabled")
 }
 
-func runDaemon() int {
+var rpcNewClient = rpc.NewClient
+
+type rpcManager struct {
+	mu     sync.Mutex
+	client *rpc.Client
+	appID  string
+}
+
+func newRPCManager(appID string) *rpcManager {
+	return &rpcManager{appID: appID}
+}
+
+func (rm *rpcManager) connect() error {
+	rm.mu.Lock()
+	defer rm.mu.Unlock()
+	if rm.client != nil && rm.client.IsConnected() {
+		return nil
+	}
+	if rm.client != nil {
+		rm.client.Close()
+	}
+	c, err := rpcNewClient(rm.appID)
+	if err != nil {
+		return err
+	}
+	rm.client = c
+	return nil
+}
+
+func (rm *rpcManager) isConnected() bool {
+	rm.mu.Lock()
+	defer rm.mu.Unlock()
+	return rm.client != nil && rm.client.IsConnected()
+}
+
+func (rm *rpcManager) setActivity(a *rpc.RichActivity) error {
+	rm.mu.Lock()
+	c := rm.client
+	rm.mu.Unlock()
+	if c == nil {
+		return fmt.Errorf("not connected")
+	}
+	return c.SetActivity(a)
+}
+
+func (rm *rpcManager) clearActivity() {
+	rm.mu.Lock()
+	c := rm.client
+	rm.mu.Unlock()
+	if c != nil {
+		c.ClearActivity()
+	}
+}
+
+func (rm *rpcManager) close() {
+	rm.mu.Lock()
+	c := rm.client
+	rm.client = nil
+	rm.mu.Unlock()
+	if c != nil {
+		c.ClearActivity()
+		c.Close()
+	}
+}
+
+func runDaemon(debug bool) int {
 	configDir := configDirPath()
 	configPath := filepath.Join(configDir, "picord", "config.yaml")
 
@@ -73,10 +139,13 @@ func runDaemon() int {
 		cfg = defaultConfig()
 	}
 
-	rpcClient, rpcErr := rpc.NewClient(cfg.AppID)
-	if rpcErr != nil {
+	rpcMgr := newRPCManager(cfg.AppID)
+	if _, rpcErr := rpcNewClient(cfg.AppID); rpcErr != nil {
 		log.Printf("Warning: Cannot connect to Discord: %v", rpcErr)
 		log.Println("Picord will run but Rich Presence won't work until Discord is available.")
+	} else {
+		// Best-effort initial connect; if it fails we rely on background reconnect.
+		_ = rpcMgr.connect()
 	}
 
 	state := server.NewAppState()
@@ -100,23 +169,21 @@ func runDaemon() int {
 	webServer.OnOverrideSet = func(p *profile.Profile) {
 		state.SetOverride(p)
 		if p != nil {
-			setRichPresence(rpcClient, p, nil)
+			setRichPresence(rpcMgr, p, nil)
 			tray.UpdateStatus("Manual: " + p.Name)
 		}
 	}
 	webServer.OnOverrideClear = func() {
 		state.SetOverride(nil)
 		currentProfile = nil
-		if rpcClient != nil {
-			rpcClient.ClearActivity()
-		}
+		rpcMgr.clearActivity()
 		tray.UpdateStatus("Idle")
 	}
 	webServer.OnAutoDetectSet = func(enabled bool) {
 		state.SetAutoDetect(enabled)
 		tray.SetAutoDetectState(enabled)
-		if !enabled && rpcClient != nil {
-			rpcClient.ClearActivity()
+		if !enabled {
+			rpcMgr.clearActivity()
 			tray.UpdateStatus("Disabled")
 		}
 		if enabled {
@@ -154,22 +221,18 @@ func runDaemon() int {
 				log.Printf("[presence] matched profile=%q process=%q", match.Name, proc.Name)
 				currentProfile = match
 				state.SetActive(match.Name, proc.Name)
-				if rpcClient != nil {
-					setRichPresence(rpcClient, match, proc)
-				}
+				setRichPresence(rpcMgr, match, proc)
 				tray.UpdateStatus(match.Name)
 			}
 		} else if currentProfile != nil {
 			log.Println("[presence] no match, clearing activity")
 			currentProfile = nil
 			state.ClearActive()
-			if rpcClient != nil {
-				rpcClient.ClearActivity()
-			}
+			rpcMgr.clearActivity()
 			tray.UpdateStatus("Idle")
 		}
 	})
-
+	procMonitor.SetDebug(debug)
 	procMonitor.Start()
 
 	reconnectStopCh := make(chan struct{})
@@ -182,10 +245,10 @@ func runDaemon() int {
 			case <-reconnectStopCh:
 				return
 			case <-ticker.C:
-				if rpcClient != nil && !rpcClient.IsConnected() {
+				if !rpcMgr.isConnected() {
 					if _, err := rpc.DiscoverSocket(); err == nil {
-						if rerr := rpcClient.Reconnect(); rerr == nil {
-							log.Println("Reconnected to Discord")
+						if rerr := rpcMgr.connect(); rerr == nil {
+							log.Println("Connected to Discord")
 						}
 					}
 				}
@@ -197,7 +260,7 @@ func runDaemon() int {
 	signal.Notify(sigCh, syscall.SIGINT, syscall.SIGTERM)
 	go func() {
 		<-sigCh
-		cleanup(rpcClient, httpServer, configMgr, procMonitor, reconnectStopCh)
+		cleanup(rpcMgr, httpServer, configMgr, procMonitor, reconnectStopCh)
 		os.Exit(0)
 	}()
 
@@ -215,26 +278,24 @@ func runDaemon() int {
 		},
 		SetAutoDetect: func(enabled bool) {
 			state.SetAutoDetect(enabled)
-			if !enabled && rpcClient != nil {
-				rpcClient.ClearActivity()
+			if !enabled {
+				rpcMgr.clearActivity()
 			}
 		},
 		SetOverride: func(p *profile.Profile) {
 			state.SetOverride(p)
-			if p != nil && rpcClient != nil {
-				setRichPresence(rpcClient, p, nil)
+			if p != nil {
+				setRichPresence(rpcMgr, p, nil)
 			}
 		},
 		ClearOverride: func() {
 			state.SetOverride(nil)
 			currentProfile = nil
-			if rpcClient != nil {
-				rpcClient.ClearActivity()
-			}
+			rpcMgr.clearActivity()
 			tray.UpdateStatus("Idle")
 		},
 		Quit: func() {
-			cleanup(rpcClient, httpServer, configMgr, procMonitor, reconnectStopCh)
+			cleanup(rpcMgr, httpServer, configMgr, procMonitor, reconnectStopCh)
 			os.Exit(0)
 		},
 	})
@@ -261,8 +322,8 @@ func defaultConfig() config.AppConfig {
 	}
 }
 
-func setRichPresence(client *rpc.Client, p *profile.Profile, proc *profile.DetectedProcess) {
-	if client == nil {
+func setRichPresence(rm *rpcManager, p *profile.Profile, proc *profile.DetectedProcess) {
+	if !rm.isConnected() {
 		return
 	}
 
@@ -297,10 +358,10 @@ func setRichPresence(client *rpc.Client, p *profile.Profile, proc *profile.Detec
 		}
 	}
 
-	if err := client.SetActivity(activity); err != nil {
+	if err := rm.setActivity(activity); err != nil {
 		log.Printf("Error setting activity: %v, attempting reconnect", err)
-		if rerr := client.Reconnect(); rerr == nil {
-			if err2 := client.SetActivity(activity); err2 != nil {
+		if rerr := rm.connect(); rerr == nil {
+			if err2 := rm.setActivity(activity); err2 != nil {
 				log.Printf("Error setting activity after reconnect: %v", err2)
 			}
 		} else {
@@ -309,17 +370,14 @@ func setRichPresence(client *rpc.Client, p *profile.Profile, proc *profile.Detec
 	}
 }
 
-func cleanup(client *rpc.Client, httpServer *http.Server, configMgr *config.Manager, mon *monitor.Monitor, reconnectStopCh chan struct{}) {
+func cleanup(rm *rpcManager, httpServer *http.Server, configMgr *config.Manager, mon *monitor.Monitor, reconnectStopCh chan struct{}) {
 	if reconnectStopCh != nil {
 		close(reconnectStopCh)
 	}
 	if mon != nil {
 		mon.Stop()
 	}
-	if client != nil {
-		client.ClearActivity()
-		client.Close()
-	}
+	rm.close()
 	if httpServer != nil {
 		httpServer.Close()
 	}

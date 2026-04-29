@@ -15,14 +15,14 @@ import (
 	"github.com/pecodigos/picord/internal/profile"
 )
 
-func runCLI(args []string) int {
+func runCLI(args []string, debug bool) int {
 	if len(args) == 0 {
-		return runDaemon()
+		return runDaemon(debug)
 	}
 
 	switch args[0] {
 	case "run":
-		return runDaemon()
+		return runDaemon(debug)
 	case "status":
 		return cmdStatus()
 	case "profiles":

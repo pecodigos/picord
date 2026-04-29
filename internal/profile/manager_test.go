@@ -131,3 +131,50 @@ func TestManager_ReplaceUser(t *testing.T) {
 		t.Error("expected default to still exist")
 	}
 }
+
+func TestManager_StableAfterSortAndDelete(t *testing.T) {
+	m := NewManager(nil, nil)
+	m.Add(Profile{Name: "a", Enabled: true, Priority: 1, Match: MatchRule{Type: MatchProcessName, Value: "a"}})
+	m.Add(Profile{Name: "b", Enabled: true, Priority: 2, Match: MatchRule{Type: MatchProcessName, Value: "b"}})
+	m.Add(Profile{Name: "c", Enabled: true, Priority: 3, Match: MatchRule{Type: MatchProcessName, Value: "c"}})
+
+	// After adds and sorts, Get should return correct profiles.
+	if p := m.Get("a"); p == nil || p.Name != "a" {
+		t.Errorf("Get(a) wrong: %v", p)
+	}
+	if p := m.Get("b"); p == nil || p.Name != "b" {
+		t.Errorf("Get(b) wrong: %v", p)
+	}
+	if p := m.Get("c"); p == nil || p.Name != "c" {
+		t.Errorf("Get(c) wrong: %v", p)
+	}
+
+	// Delete middle element.
+	if !m.Delete("b") {
+		t.Fatal("expected delete b to succeed")
+	}
+
+	// After delete, remaining should be correct.
+	if p := m.Get("a"); p == nil || p.Name != "a" {
+		t.Errorf("after delete, Get(a) wrong: %v", p)
+	}
+	if p := m.Get("c"); p == nil || p.Name != "c" {
+		t.Errorf("after delete, Get(c) wrong: %v", p)
+	}
+	if m.Get("b") != nil {
+		t.Error("expected b to be deleted")
+	}
+
+	// Add another to trigger potential reallocation.
+	m.Add(Profile{Name: "d", Enabled: true, Priority: 4, Match: MatchRule{Type: MatchProcessName, Value: "d"}})
+
+	if p := m.Get("a"); p == nil || p.Name != "a" {
+		t.Errorf("after realloc, Get(a) wrong: %v", p)
+	}
+	if p := m.Get("c"); p == nil || p.Name != "c" {
+		t.Errorf("after realloc, Get(c) wrong: %v", p)
+	}
+	if p := m.Get("d"); p == nil || p.Name != "d" {
+		t.Errorf("after realloc, Get(d) wrong: %v", p)
+	}
+}
