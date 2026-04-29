@@ -65,6 +65,7 @@ Edit `~/.config/picord/config.yaml`:
 app_id: "YOUR_DISCORD_CLIENT_ID"   # Required - your Discord application ID
 poll_interval: 2                     # Seconds between process scans
 web_port: 17970                      # Web GUI port
+scan_all_processes: true             # Detect ordinary apps/games, not just Discord IPC clients
 profiles: []                         # Your custom profiles (optional)
 ```
 
@@ -108,10 +109,11 @@ cp icons/picord_128.png ~/.local/share/icons/hicolor/128x128/apps/picord.png
 app_id: "123456789012345678"
 poll_interval: 2
 web_port: 17970
+scan_all_processes: true
 profiles:
   - name: "My Custom Game"
     match:
-      type: process_name    # process_name | regex
+      type: process_name    # process_name | window_title | regex
       value: "mygame"
     activity:
       details: "Playing My Game"
@@ -128,10 +130,11 @@ profiles:
 
 | Type | Description | Example |
 |------|-------------|---------|
-| `process_name` | Exact process name match (from `/proc/<pid>/comm`) | `retroarch` |
-| `regex` | Go regular expression match | `(?i).*craft.*` |
+| `process_name` | Exact process name match (from `/proc/<pid>/cmdline`, falling back to `comm`) | `retroarch` |
+| `window_title` | Case-insensitive substring match against the visible window title | `Stardew Valley` |
+| `regex` | Go regular expression match against process name | `(?i).*craft.*` |
 
-`window_title` coming in V2.
+Set `scan_all_processes: false` to use the narrower legacy mode that only considers processes with open Discord IPC sockets.
 
 ## Built-in Profiles
 
@@ -151,8 +154,8 @@ profiles:
 
 ## How It Works
 
-1. **Scans** `/proc/*/fd/` for file descriptors pointing to `discord-ipc-*` sockets
-2. **Matches** detected process names against built-in + user profiles
+1. **Scans** running processes under `/proc` (default) or only Discord IPC-connected processes when `scan_all_processes: false`
+2. **Matches** detected process names and window titles against built-in + user profiles
 3. **Sets** Rich Presence via Discord's local IPC socket (`$XDG_RUNTIME_DIR/discord-ipc-0`)
 4. **Clears** presence when the matched process terminates
 

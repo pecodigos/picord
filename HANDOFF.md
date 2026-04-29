@@ -3,15 +3,15 @@
 > **Date:** 2026-04-29  
 > **Branch:** \`master\`  
 > **Go:** 1.21+  
-> **Status:** Builds, \`go test ./...\` passes (24 tests), \`go vet\` clean.
+> **Status:** Builds, \`go test ./...\` passes (38 tests), \`go vet\` clean.
 
 ---
 
 ## 1. What This Is
 
-Picord is a Linux daemon that auto-sets Discord Rich Presence. It scans \`/proc/*/fd/\` for processes with open \`discord-ipc-*\` Unix socket connections, matches them against profiles, and sends \`SET_ACTIVITY\` over Discord's local IPC protocol. Features: system tray (D-Bus SNI), web GUI (embedded SPA at \`localhost:17970\`), CLI, 48 built-in profiles, template variables, window title matching, auto-reconnect.
+Picord is a Linux daemon that auto-sets Discord Rich Presence. By default it scans all numeric \`/proc/<pid>\` entries, matches them against profiles, and sends \`SET_ACTIVITY\` over Discord's local IPC protocol. Users can set \`scan_all_processes: false\` to use the narrower legacy scan that only considers processes already connected to Discord IPC. Features: system tray (D-Bus SNI), web GUI (embedded SPA at \`localhost:17970\`), CLI, 48 built-in profiles, template variables, window title matching, auto-reconnect.
 
-**Critical constraint:** The monitor ONLY detects processes already connected to Discord IPC. Most games don't do this. A major future enhancement is "pre-emptive matching" — scanning ALL \`/proc\` entries regardless of IPC connection.
+**Current constraint:** Picord still needs a running Discord client and a valid Discord application client ID before it can publish Rich Presence. The scanner no longer depends on games opening Discord IPC sockets.
 
 ---
 
@@ -19,14 +19,15 @@ Picord is a Linux daemon that auto-sets Discord Rich Presence. It scans \`/proc/
 
 ```
 cmd/picord/
-  main.go          (329L) — Entry point. Wires all subsystems, signal handling, cleanup.
+  main.go          (330L) — Entry point. Wires all subsystems, signal handling, cleanup.
+  main_test.go     (10L) — Fallback default config coverage.
   cli.go           (248L) — CLI: run, status, profiles, override, clear, reload, help.
 internal/rpc/
   client.go        (314L) — Custom Discord IPC wire protocol. Handshake, frame I/O, reconnect.
 internal/monitor/
-  monitor.go       (153L) — /proc scanner, poll loop, process name resolution.
+  monitor.go       (170L) — /proc scanner, poll loop, process name resolution.
   window_linux.go  (248L) — Window title detection per compositor.
-  monitor_test.go  (121L)
+  monitor_test.go  (152L)
   window_linux_test.go (106L)
 internal/profile/
   types.go         (43L) — Profile, MatchRule, Activity, Button structs.
@@ -39,8 +40,8 @@ internal/profile/
   manager_test.go  (133L)
   render_test.go   (82L)
 internal/config/
-  config.go        (165L) — YAML load/save, fsnotify watcher, validation.
-  config_test.go   (102L)
+  config.go        (167L) — YAML load/save, fsnotify watcher, validation.
+  config_test.go   (145L)
 internal/server/
   server.go        (336L) — HTTP API (7 endpoints), CORS, AppState.
   web/index.html
@@ -81,7 +82,7 @@ Makefile — build, run, clean, install, fmt, lint, tidy, deb, appimage
 ```bash
 cd /mnt/hdd/Code/2026/picord
 make build                          # go build -ldflags="-s -w" -o bin/picord ./cmd/picord
-go test ./...                       # 24 tests
+go test ./...                       # 38 tests
 go vet ./...
 
 # Run daemon
@@ -115,7 +116,7 @@ go vet ./...
    - OnReloadConfig → reload config from disk
    - OnProfilesSaved → configMgr.UpdateProfiles() (writes YAML)
 8. server.StartServer() → http.ListenAndServe in goroutine
-9. monitor.New() + Start() → poll loop in goroutine
+9. \`monitor.NewWithOptions(cfg.PollInterval, cfg.ScanAllProcesses, callback)\` + Start() → poll loop in goroutine
 10. Background reconnect goroutine (10s ticker, stops via reconnectStopCh)
 11. Signal handler (SIGINT/SIGTERM) → cleanup() → os.Exit(0)
 12. tray.Run() → **blocks main goroutine**
@@ -155,13 +156,14 @@ func (c *Client) Close() error
 
 ### 5.3 Process Monitor (internal/monitor/monitor.go)
 
-Scans /proc every cfg.PollInterval seconds (default 2). Only detects processes with fd symlinks containing "discord-ipc".
+Scans /proc every cfg.PollInterval seconds (default 2). Default mode (`scan_all_processes: true`) includes every numeric `/proc/<pid>` entry. Legacy mode (`scan_all_processes: false`) only includes processes with fd symlinks containing "discord-ipc".
 
 ```go
 var procRoot = "/proc"  // overridden in tests
 
 type Monitor struct {
     interval time.Duration
+    scanAll  bool
     stopCh   chan struct{}
     callback func([]profile.DetectedProcess)
 }
@@ -269,14 +271,15 @@ Called in setRichPresence() in main.go when proc != nil. Overrides (proc == nil)
 
 ```go
 type AppConfig struct {
-    AppID        string            `yaml:"app_id" json:"app_id"`
-    PollInterval int               `yaml:"poll_interval" json:"poll_interval"`
-    WebPort      int               `yaml:"web_port" json:"web_port"`
-    Profiles     []profile.Profile `yaml:"profiles" json:"profiles"`
+    AppID            string            `yaml:"app_id" json:"app_id"`
+    PollInterval     int               `yaml:"poll_interval" json:"poll_interval"`
+    WebPort          int               `yaml:"web_port" json:"web_port"`
+    ScanAllProcesses bool              `yaml:"scan_all_processes" json:"scan_all_processes"`
+    Profiles         []profile.Profile `yaml:"profiles" json:"profiles"`
 }
 ```
 
-Defaults: AppID="", PollInterval=2, WebPort=17970.
+Defaults: AppID="", PollInterval=2, WebPort=17970, ScanAllProcesses=true.
 
 Validation: PollInterval < 1 → 2. WebPort < 1 || > 65535 → 17970.
 
@@ -323,7 +326,9 @@ UpdateStatus(text) and SetAutoDetectState(enabled) update global package-level v
 ## 6. Data Flow
 
 ```
-/proc/*/fd/ (discord-ipc symlinks)
+/proc/<pid> entries (default scan_all_processes: true)
+    │
+    └── legacy mode: /proc/*/fd/ discord-ipc symlinks only
     ↓
 monitor.Monitor (every 2s)
     ↓
@@ -359,6 +364,7 @@ Path: ~/.config/picord/config.yaml (or $XDG_CONFIG_HOME/picord/config.yaml)
 app_id: "123456789012345678"    # REQUIRED — Discord application client ID
 poll_interval: 2                # Seconds between scans
 web_port: 17970                 # Web GUI port
+scan_all_processes: true        # Scan ordinary apps/games; false = legacy IPC-only scan
 profiles:                       # Optional custom profiles
   - name: "My Game"
     match:
@@ -377,15 +383,16 @@ profiles:                       # Optional custom profiles
 
 ## 8. Test Coverage
 
-24 tests across 4 packages. Run: go test ./...
+38 tests across 5 packages. Run: go test ./...
 
 | File | Tests | What they cover |
 |------|-------|-----------------|
-| profile/matcher_test.go | 7 | process_name exact+ci, window_title substring, regex, invalid regex, disabled, FindBestMatch priority + tie-breaker |
+| cmd/picord/main_test.go | 1 | Fallback default config keeps scan-all enabled |
+| profile/matcher_test.go | 8 | process_name exact+ci, window_title substring, regex, invalid regex, disabled, FindBestMatch priority + tie-breaker |
 | profile/manager_test.go | 8 | Merge defaults+user, user overrides default, add, update, delete, sort, match, ReplaceUser keeps defaults |
 | profile/render_test.go | 5 | No templates, {process_name}, {window_title}, mixed, empty window title |
-| config/config_test.go | 4 | Load/save round-trip, defaults on missing file, validation clamping, invalid YAML error |
-| monitor/monitor_test.go | 5 | Mock /proc: 0 processes, 1 process, N processes, dedup, Start/Stop no panic |
+| config/config_test.go | 6 | Load/save round-trip, defaults on missing file, scan_all_processes default/false handling, validation clamping, invalid YAML error |
+| monitor/monitor_test.go | 7 | Mock /proc: IPC-only scan, all-process scan, ScanNow options, dedup, Start/Stop no panic |
 | monitor/window_linux_test.go | 3 | Hyprland JSON parse, Sway tree walk, DetectCompositor for all 5 types |
 
 **Untested (0% coverage):**
@@ -393,7 +400,7 @@ profiles:                       # Optional custom profiles
 - internal/server/server.go — needs HTTP test server
 - internal/tray/tray.go — GUI, hard to unit test
 - cmd/picord/cli.go — needs mock HTTP server
-- cmd/picord/main.go — integration test only
+- cmd/picord/main.go — mostly integration-only (defaultConfig helper covered)
 
 ---
 
@@ -405,10 +412,10 @@ profiles:                       # Optional custom profiles
 - sendCommand() reads exactly ONE response frame. Unsolicited Discord events will break it.
 - **Fix:** Add a background frame reader goroutine that routes responses by nonce. Handle unsolicited events separately.
 
-### HIGH: Only detects Discord-IPC-connected processes
-- The monitor scans /proc/*/fd/ for discord-ipc symlinks. Most apps don't open Discord IPC sockets.
-- The 48 built-in profiles are optimistic — many will never trigger.
-- **Fix:** Add a "scan all processes" mode that matches ALL /proc/<pid>/comm entries against profiles, regardless of IPC connection.
+### RESOLVED: Pre-emptive process matching
+- `scan_all_processes` now defaults to true and scans every numeric `/proc/<pid>` entry.
+- `scan_all_processes: false` keeps the legacy Discord-IPC-only scan for narrower detection.
+- Matching still uses the same profile semantics: process_name exact match, window_title substring, regex on process name.
 
 ### MEDIUM: Regex compiled on every match
 - matcher.go:37 calls regexp.Compile() every 2 seconds per regex profile.
@@ -438,7 +445,7 @@ profiles:                       # Optional custom profiles
 | Feature | Status |
 |---------|--------|
 | Compilation | ✅ Go 1.21+ |
-| Tests | ✅ 24/24 pass |
+| Tests | ✅ 38/38 pass |
 | go vet | ✅ Clean |
 | CLI commands | ✅ All work |
 | Debug logging | ✅ --debug flag |
@@ -450,7 +457,7 @@ profiles:                       # Optional custom profiles
 | Auto-reconnect | ✅ Reconnect() + background ticker |
 | System tray | ⚠️ Depends on compositor SNI support |
 | Actual Discord RPC | ❌ NEVER TESTED with real Discord |
-| Pre-emptive matching | ❌ Only Discord-connected processes |
+| Pre-emptive matching | ✅ scan_all_processes default covers ordinary apps/games |
 | KDE dbus fallback | ❌ Stub |
 | AppImage packaging | ❌ Makefile stub |
 
@@ -462,10 +469,10 @@ profiles:                       # Optional custom profiles
 - Commit the current handoff state before making new changes.
 - Verify `go test ./...` and `go vet ./...` are green.
 
-### Phase 1. Pre-emptive process matching (current focus)
+### Phase 1. Pre-emptive process matching (complete)
 Goal: make Picord useful for ordinary games and apps that never connect to Discord IPC.
 
-TDD tasks:
+Completed TDD tasks:
 1. Config: add `scan_all_processes` with default `true`; verify missing config files and partial YAML keep the default enabled, while explicit `false` is preserved.
 2. Monitor: add an all-process scan path that reads every numeric `/proc/<pid>` entry, resolves names with the existing cmdline/comm fallback, keeps window-title enrichment, and deduplicates by PID.
 3. Daemon wiring: pass `cfg.ScanAllProcesses` into the monitor and include it in fallback/default config.
@@ -502,7 +509,7 @@ Create `internal/rpc/client_test.go` with a mock Unix socket server implementing
 
 1. Read this file fully.
 2. Run go test ./... and go vet ./....
-3. Pick the highest-impact item from Next Steps.
+3. Pick the highest-impact remaining item from the refined plan.
 4. Make minimal changes. Add tests.
 5. Run tests and vet again.
 6. Update this HANDOFF.md if architecture changes significantly.
