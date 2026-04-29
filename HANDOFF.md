@@ -3,7 +3,7 @@
 > **Date:** 2026-04-29  
 > **Branch:** \`master\`  
 > **Go:** 1.21+  
-> **Status:** Builds; `go test -count=1 ./...`, `go vet ./...`, `go test -race ./...`, and `make build` pass. Post-Kimi audit found P0 integration blockers; next plan: `docs/plans/2026-04-29-post-kimi-stabilization.md`.
+> **Status:** Builds; `go test -count=1 ./...`, `go vet ./...`, `go test -race ./...`, `make build`, and diff checks pass after Kimi's second stabilization pass. Latest next-step plan: `docs/plans/2026-04-29-post-kimi-followup-stabilization.md`.
 
 ---
 
@@ -13,7 +13,7 @@ Picord is a Linux daemon that auto-sets Discord Rich Presence. By default it sca
 
 **Current constraint:** Picord still needs a running Discord client and a valid Discord application client ID before it can publish Rich Presence. The scanner no longer depends on games opening Discord IPC sockets.
 
-**Post-Kimi blocker:** catalog auto-detection is not reliably active yet. The daemon tries catalog fallback only when `profileMgr.Match` returns a process, but that process is nil when no profile matched. Default catalog refresh also references unsupported `lutris_local`. See `docs/plans/2026-04-29-post-kimi-stabilization.md` before implementing more providers.
+**Follow-up blocker:** Kimi's second pass fixed the previous P0 catalog integration items, but Discord availability and local write safety still need work. `setRichPresence` still returns before recording desired activity when Discord is disconnected, so start-before-Discord can lose the active game. The local API also needs real unsafe-method/CSRF protection beyond narrowed CORS. See `docs/plans/2026-04-29-post-kimi-followup-stabilization.md`.
 
 ---
 
@@ -161,12 +161,14 @@ func (c *Client) Close() error
 **Handshake:** Send {v:"1", client_id:"<appID>"} (opcode 0). Expect response with cmd:"DISPATCH" and evt:"READY".
 
 **Socket discovery order:**
-1. $DISCORD_IPC_PATH env var
-2. Flatpak: $XDG_RUNTIME_DIR/app/com.discordapp.Discord/discord-ipc-{0,1,2}
-3. $XDG_RUNTIME_DIR/discord-ipc-0
-4. /run/user/$UID/discord-ipc-0
-5. /tmp/discord-ipc-0
-6. Indices 0-9 for all above
+1. `$DISCORD_IPC_PATH` env var if it exists.
+2. Indexed `discord-ipc-0` through `discord-ipc-9` under:
+   - `$XDG_RUNTIME_DIR`
+   - `/run/user/$UID`
+   - `os.TempDir()`
+3. Indexed Flatpak path `$XDG_RUNTIME_DIR/app/com.discordapp.Discord/discord-ipc-{0..9}`.
+
+**Remaining socket gap:** discovery currently returns the first existing path, even if it is a stale regular file. Next pass should dial/handshake candidates in order and test with real Unix sockets.
 
 **Critical limitation:** sendCommand() does writeFrame then readFrame synchronously. It expects exactly one response. If Discord sends unsolicited events (e.g., between command and response), the client will misread. This has **never been tested against real Discord.**
 
@@ -182,7 +184,8 @@ type rpcManager struct {
 ```
 - `connect()` creates a new `rpc.Client` via injectable `rpcNewClient` when nil or disconnected.
 - `isConnected()`, `setActivity()`, `clearActivity()`, `close()` are thread-safe.
-- Background reconnect goroutine now calls `rpcMgr.connect()` when not connected, so Picord can start before Discord and connect later.
+- Background reconnect goroutine calls `rpcMgr.connect()` when not connected, so Picord can start before Discord and connect later.
+- `rpcManager` stores `desiredActivity` and replays it after connect, but `setRichPresence()` still returns before calling `rm.setActivity()` when disconnected. This means desired presence is not recorded if the first match happens while Discord is down; see the follow-up plan.
 
 ### 5.3 Process Monitor (internal/monitor/monitor.go)
 
@@ -307,10 +310,12 @@ type AppConfig struct {
     WebPort          int               `yaml:"web_port" json:"web_port"`
     ScanAllProcesses bool              `yaml:"scan_all_processes" json:"scan_all_processes"`
     Profiles         []profile.Profile `yaml:"profiles" json:"profiles"`
+    Catalog          CatalogConfig     `yaml:"catalog" json:"catalog"`
+    Images           ImageConfig       `yaml:"images" json:"images"`
 }
 ```
 
-Defaults: AppID="", PollInterval=2, WebPort=17970, ScanAllProcesses=true.
+Defaults: AppID="", PollInterval=2, WebPort=17970, ScanAllProcesses=true. Catalog defaults: enabled=true, auto_refresh=true, sources=`[steam_local, desktop]`, refresh_hours=24. Image defaults: mode=`generic`, generic_asset_key=`picord_game`, cache enabled.
 
 Validation: PollInterval < 1 → 2. WebPort < 1 || > 65535 → 17970.
 
@@ -337,12 +342,17 @@ Web assets embedded via //go:embed all:web. Served from /.
 - GET /api/settings → {auto_detect: bool}
 - PUT /api/settings → set auto_detect
 - POST /api/reload → trigger OnReloadConfig
+- GET /api/catalog/status → {enabled, entry_count, alias_count}
+- GET /api/catalog/search?q=... → []catalogEntryResponse with snake_case fields
+- GET /api/catalog/entries/:id → catalogEntryResponse
+- POST /api/catalog/refresh → refresh one source (`steam_local`, `desktop`, `lutris_public`)
+- POST /api/catalog/profiles/from-entry/:id → create a profile from a catalog entry
 
 **Server callbacks** (wired in main.go): OnOverrideSet, OnOverrideClear, OnAutoDetectSet, OnReloadConfig, OnProfilesSaved.
 
 **AppState** (thread-safe via RWMutex): activeName, activeProc, detectedProcs, override, autoDetect.
 
-**Web GUI:** Dark Discord-style theme. Sections: Status, Detected Processes, Manual Override, Your Profiles, Built-in Profiles, Settings. Auto-refreshes every 3 seconds. Modal for add/edit profiles. Supports match types process_name, window_title, regex.
+**Web GUI:** Dark Discord-style theme. Sections: Status, Detected Processes, Catalog, Manual Override, Your Profiles, Built-in Profiles, Settings. Auto-refreshes every 3 seconds. Modal for add/edit profiles. Supports match types process_name, window_title, regex. Dynamic content is now mostly DOM/textContent based, but static inline onclick handlers remain.
 
 ### 5.8 System Tray (internal/tray/tray.go)
 
@@ -366,21 +376,19 @@ monitor.Monitor (every 2s)
 callback(procs) in main.go
     ├── state.SetDetected(procs)
     ├── if override || !autoDetect → return
-    ├── match, proc := profileMgr.Match(procs)
-    │       └── FindBestMatch(profiles, procs)
-    │           └── Profile.Matches(proc)
-    └── if match != nil:
-            setRichPresence(client, match, proc)
-                ├── RenderActivity(match.Activity, proc) // template vars
-                └── client.SetActivity(rpc.RichActivity)
-                        └── sendCommand("SET_ACTIVITY", args)
-                                ├── writeFrame(opFrame, json)
-                                └── readFrame() ← expects response
-            tray.UpdateStatus(match.Name)
-        else if had previous match:
-            client.ClearActivity()
+    ├── profileMgr.Match(procs)
+    │       └── explicit/user/default profile candidate wins first today
+    ├── if profile matched → setRichPresence(profile, proc)
+    ├── else if catalogMatcher != nil:
+    │       └── findBestCatalogMatch(ctx, matcher, procs)
+    │           └── Steam AppID → Lutris slug → desktop ID → executable → exact title/window
+    │       └── MatchResult.ToProfile(imgResolver) → setRichPresence(ephemeral profile, proc)
+    └── else if had previous match:
+            rpcMgr.clearActivity()
             tray.UpdateStatus("Idle")
 ```
+
+Important follow-up: profile matches are currently considered before catalog candidates. A broad default launcher profile can still mask a high-confidence catalog match for the actual game process.
 
 **Web GUI → Save profile flow:**
 Browser POST /api/profiles → handleProfiles → profileMgr.Add() → notifyProfilesChanged() → OnProfilesSaved() → configMgr.UpdateProfiles() → writes config.yaml → fsnotify watcher fires → reloads config → profileMgr.MergeUser() (idempotent re-merge).
@@ -414,35 +422,48 @@ profiles:                       # Optional custom profiles
 
 ## 8. Test Coverage
 
-57 tests across 7 packages. Run: go test ./...
+102 test functions/benchmarks across 17 `_test.go` files. Run: `go test -count=1 ./...`.
 
 | File | Tests | What they cover |
 |------|-------|-----------------|
-| cmd/picord/main_test.go | 4 | Fallback default config; rpcManager connect/reconnect/close with mock Unix socket |
-| internal/rpc/client_test.go | 4 | Mock Discord IPC socket: handshake, SET_ACTIVITY frame format, reconnect, close |
-| profile/matcher_test.go | 8 | process_name exact+ci, window_title substring, regex, invalid regex, disabled, FindBestMatch priority + tie-breaker |
-| profile/manager_test.go | 9 | Merge defaults+user, user overrides default, add, update, delete, sort, match, ReplaceUser, stable after sort+delete |
-| profile/render_test.go | 5 | No templates, {process_name}, {window_title}, mixed, empty window title |
-| config/config_test.go | 6 | Load/save round-trip, defaults on missing file, scan_all_processes default/false handling, validation clamping, invalid YAML error |
-| monitor/monitor_test.go | 7 | Mock /proc: IPC-only scan, all-process scan, ScanNow options, dedup, Start/Stop no panic |
-| monitor/window_linux_test.go | 3 | Hyprland JSON parse, Sway tree walk, DetectCompositor for all 5 types |
-| internal/catalog/store_test.go | 7 | NormalizeTitle, migration, UpsertEntry, GetEntry, SearchByAlias, SearchTitlePrefix, ExactTitleMatch, SourceState |
-| internal/catalog/matcher_test.go | 6 | Steam AppID match, Lutris slug match, executable match, exact title match, no match, ToProfile conversion |
-| internal/catalog/images_test.go | 4 | DownloadImage accepts PNG, rejects HTML/text, ImageResolver modes, ImageCacheDir |
-| internal/catalog/source_steam_test.go | 2 | ACF parser, SteamLocalSource refresh with mock steamapps dir |
-| internal/catalog/source_lutris_test.go | 3 | Lutris public refresh with httptest, MaxPages respect, offline skip |
-| internal/catalog/source_desktop_test.go | 2 | Desktop file parser, DesktopSource refresh with mock applications dir |
-| internal/catalog/refresher_test.go | 3 | Start/Stop, Stop waits, BuildSources valid/unknown |
-| internal/server/server_test.go | 6 | Catalog status, search, entry, refresh, profile-from-entry, missing query handling |
+| cmd/picord/main_test.go | 8 | Fallback defaults, rpcManager retry/replay, default catalog sources, catalog match selection |
+| internal/rpc/client_test.go | 8 | Mock Discord IPC handshake, SET_ACTIVITY payloads, reconnect, close, socket discovery ordering |
+| internal/profile/matcher_test.go | 8 | process_name exact+ci, window_title substring, regex, invalid regex, disabled, FindBestMatch priority + tie-breaker |
+| internal/profile/manager_test.go | 9 | Merge defaults+user, overrides, add/update/delete, sort, match, ReplaceUser, stable after sort/delete |
+| internal/profile/render_test.go | 5 | Activity template rendering |
+| internal/config/config_test.go | 6 | Load/save, defaults, scan_all_processes, validation, invalid YAML |
+| internal/monitor/monitor_test.go | 8 | Mock /proc scans, all-process and IPC-only modes, hints, dedup, Start/Stop |
+| internal/monitor/hints_test.go | 8 | Steam/env/desktop hint extraction and allowlist parsing |
+| internal/monitor/window_linux_test.go | 3 | Hyprland, Sway, compositor detection |
+| internal/catalog/store_test.go | 8 | Migration, upsert/update, entry lookup, alias/title search, source state |
+| internal/catalog/matcher_test.go | 6 | Steam/Lutris/executable/title matching and ToProfile |
+| internal/catalog/images_test.go | 5 | Download validation, resolver modes, cache dir |
+| internal/catalog/source_steam_test.go | 2 | ACF parser and SteamLocalSource refresh |
+| internal/catalog/source_lutris_test.go | 5 | Lutris httptest refresh, MaxPages, offline skip, source-state errors |
+| internal/catalog/source_desktop_test.go | 2 | Desktop parser/source refresh |
+| internal/catalog/refresher_test.go | 5 | Start/Stop, Stop waits, BuildSources valid/unknown/defaults |
+| internal/server/server_test.go | 6 | Catalog status/search/entry/refresh/profile-from-entry/missing query |
 
-**Untested (0% coverage):**
-- internal/tray/tray.go — GUI, hard to unit test
-- cmd/picord/cli.go — needs mock HTTP server
-- cmd/picord/main.go — mostly integration-only (defaultConfig helper covered; rpcManager tested via main_test.go)
+**Still missing or shallow:**
+- `cmd/picord/cli.go` has no mock HTTP tests.
+- Daemon tests do not yet cover game detected while Discord is disconnected.
+- Socket discovery tests use regular files, not real stale-vs-valid Unix socket candidates.
+- Refresher tests do not prove Stop cancels an in-flight immediate refresh.
+- Browser UI behavior has no automated DOM tests.
 
 ---
 
 ## 9. Known Issues & Limitations
+
+### CRITICAL: Desired presence is not stored if Discord is disconnected at match time
+- `rpcManager` can replay `desiredActivity` after reconnect, but `setRichPresence()` still returns before calling `rm.setActivity()` when `rm.isConnected()` is false.
+- If Picord detects a game while Discord is down, `currentProfile` can be set while `desiredActivity` remains nil.
+- **Fix:** render/build the activity first, call `rm.setActivity(activity)` even while disconnected so desired state is stored, and replay on later connect.
+
+### CRITICAL: Local write API needs real unsafe-method protection
+- CORS is no longer wildcard, but unsafe requests from hostile origins are not rejected by middleware.
+- JSON mutators do not consistently require `Content-Type: application/json`.
+- **Fix:** add write-protection middleware/token or strict local-origin policy and tests for hostile-origin POST/PUT/DELETE.
 
 ### CRITICAL: Needs live Discord validation
 - rpc/client.go now has mock Unix socket coverage for handshake, SET_ACTIVITY, reconnect, and close.
@@ -466,13 +487,24 @@ profiles:                       # Optional custom profiles
 - `byName` was `map[string]*Profile` pointing into a mutable slice. After sort/append/delete, pointers could become stale.
 - Fixed: `byName` is now `map[string]int` (index into slice). Rebuilt after every `sortByPriority()` and `Delete()`.
 
-### RESOLVED: Discord startup-order reconnect
+### PARTIAL: Discord startup-order reconnect
 - If Discord was not running at daemon startup, `rpcClient` stayed nil and the reconnect goroutine never created a client later.
-- Fixed: Replaced raw `*rpc.Client` with `rpcManager` wrapper that can `connect()` when nil. Background goroutine now calls `rpcMgr.connect()` when not connected.
+- Fixed: Replaced raw `*rpc.Client` with `rpcManager` wrapper that can `connect()` when nil. Background goroutine now creates a client if Discord starts after Picord.
+- Fixed in Kimi's second pass: `rpcManager` stores `desiredActivity` after successful `setActivity` and replays it after reconnect.
+- Remaining gap: if Discord is disconnected before the first successful activity send, `setRichPresence()` returns too early and never records `desiredActivity`.
 
 ### RESOLVED: Noisy monitor logging
 - With `scan_all_processes: true`, the monitor logged every detected process every 2 seconds.
 - Fixed: Per-process and summary logs are now gated behind `monitor.SetDebug(true)`.
+
+### MEDIUM: Profile edit UI can disable profiles
+- The edit form does not submit `enabled`, so `PUT /api/profiles/:name` can decode `Enabled=false` and save a disabled profile.
+- The edit modal allows changing `name`, but the server overwrites it from the URL path, so rename is silently ignored.
+- **Fix:** preserve existing `Enabled` or add an enabled control, and make rename behavior explicit.
+
+### MEDIUM: Broad launcher profiles can mask catalog games
+- Catalog matching runs only after a profile miss. Built-in launcher profiles can match Steam/Lutris/Heroic before a high-confidence catalog match for the actual game process is considered.
+- **Fix:** rank profile and catalog candidates together, or demote broad defaults below source-specific catalog hints.
 
 ### MEDIUM: Regex compiled on every match
 - matcher.go:37 calls regexp.Compile() every 2 seconds per regex profile.
@@ -505,20 +537,23 @@ profiles:                       # Optional custom profiles
 | Tests | ✅ `go test -count=1 ./...` passes |
 | Race tests | ✅ `go test -race ./...` passes |
 | go vet | ✅ Clean |
-| CLI commands | ⚠️ Catalog/profile command naming and long flags need cleanup |
+| CLI commands | ⚠️ Usable, but HTTP failures can still return exit code 0; no CLI tests yet |
 | Debug logging | ✅ --debug flag |
-| Config load/save/reload | ⚠️ Reload only partially applies runtime changes |
-| Web GUI | ⚠️ Embedded SPA works, but catalog JSON/UI escaping need fixes |
+| Config load/save/reload | ⚠️ Reload only partially applies runtime catalog/source changes; old `lutris_local` configs need normalization |
+| Web GUI | ⚠️ Dynamic XSS mostly fixed; profile edit can disable profiles; inline handlers block strict CSP |
+| Local API writes | ❌ Needs actual unsafe-method/CSRF protection, not just narrowed CORS headers |
 | Profile matching | ✅ process_name, window_title, regex |
-| Catalog auto-detection | ❌ Fallback bug prevents catalog-only matches in daemon |
+| Catalog auto-detection | ✅ Catalog-only fallback now iterates detected processes after profile miss |
+| Catalog/profile ranking | ⚠️ Broad default profiles can still mask high-confidence catalog game candidates |
 | Template variables | ✅ {process_name}, {window_title}, {title}, {source}, {steam_app_id} |
 | Window title detection | ✅ Hyprland, Sway, X11, KDE best-effort |
-| Auto-reconnect | ⚠️ Connects later, but does not replay desired presence yet |
+| Auto-reconnect | ⚠️ Replays stored desired activity, but first match while disconnected is still lost |
 | System tray | ⚠️ Depends on compositor SNI support |
-| Actual Discord RPC | ⚠️ Mock socket covered; needs live Discord validation |
+| Actual Discord RPC | ⚠️ Mock socket covered; needs live Discord validation and nonce/background reader hardening |
 | Pre-emptive matching | ✅ scan_all_processes default covers ordinary apps/games |
-| Catalog refresh defaults | ❌ Default includes unsupported `lutris_local` |
-| Repository hygiene | ❌ Root `picord` binary is tracked |
+| Catalog refresh defaults | ✅ New defaults use implemented sources (`steam_local`, `desktop`) |
+| Catalog/refresher lifecycle | ⚠️ Immediate refresh goroutine/manual refresh overlap still need cancellation/singleflight hardening |
+| Repository hygiene | ✅ Root `picord` binary removed; `/picord` ignored |
 | KDE dbus fallback | ❌ Stub |
 | AppImage packaging | ❌ Makefile stub |
 
@@ -551,7 +586,7 @@ Created `internal/rpc/client_test.go` with a mock Unix socket server implementin
 ### Phase 3. Stabilization (complete)
 Fixed high-priority prerequisites before scaling to a catalog:
 1. ✅ Fix `profile.Manager` indexing: changed `byName map[string]*Profile` to `map[string]int` and rebuild after sort/delete. Added `TestManager_StableAfterSortAndDelete`.
-2. ✅ Fix Discord startup-order reconnect: replaced raw `*rpc.Client` with `rpcManager` wrapper that can `connect()` when nil. Background goroutine now creates a client if Discord starts after Picord. Added mock-socket tests for `rpcManager`.
+2. ✅ Fix initial Discord startup-order client creation: replaced raw `*rpc.Client` with `rpcManager` wrapper that can `connect()` when nil. Background goroutine now creates a client if Discord starts after Picord. Desired-activity replay has a remaining first-match-while-disconnected gap tracked in Phase 6.
 3. ✅ Gate noisy monitor logging: per-process and summary logs now require `monitor.SetDebug(true)`.
 
 ### Phase 4. Rich game catalog foundation (implemented by Kimi)
@@ -563,20 +598,29 @@ Kimi implemented the first catalog foundation pass after the original plan in `d
 4. Catalog HTTP endpoints, CLI commands, and web UI search/suggestions.
 5. Background refresher and tests.
 
-Post-implementation audit found that the feature is not yet production-ready in the daemon. The next plan is saved at `docs/plans/2026-04-29-post-kimi-stabilization.md`.
+### Phase 5. Post-Kimi stabilization pass (implemented by Kimi)
+Kimi's second pass addressed the previous P0 catalog/runtime items from `docs/plans/2026-04-29-post-kimi-stabilization.md`:
 
-### Phase 5. Post-Kimi stabilization (next)
-Do these before adding new catalog providers or bigger image datasets:
+1. ✅ Removed tracked root `picord` binary and ignored `/picord`.
+2. ✅ Fixed default catalog sources to implemented adapters (`steam_local`, `desktop`).
+3. ✅ Activated catalog-only fallback by iterating detected processes after profile miss.
+4. ✅ Added catalog API DTOs with snake_case JSON consumed by the web UI.
+5. ✅ Added `rpcManager.desiredActivity` replay after reconnect when an activity was already recorded.
+6. ✅ Improved status privacy and dynamic UI escaping.
+7. ✅ Added/expanded tests; current audit saw 102 test functions/benchmarks across 17 test files.
 
-1. Fix catalog fallback so catalog-only detected games can actually set Rich Presence.
-2. Fix default sources (`lutris_local` is unsupported) and remove the tracked root `picord` binary.
-3. Fix catalog JSON DTOs so the web UI receives lowercase/snake-case fields.
-4. Replay desired presence after Discord reconnect and remove the startup IPC probe leak.
-5. Fix Discord IPC socket discovery for nonzero sockets and env override ordering.
-6. Sanitize `/api/status`, restrict local API write access, and remove UI injection hazards.
-7. Harden SQLite migrations, alias replacement, Lutris cursor/rate-limit behavior, and refresher shutdown.
+### Phase 6. Follow-up stabilization (next)
+Read `docs/plans/2026-04-29-post-kimi-followup-stabilization.md`. Do these before provider/image expansion:
 
-Keep image URLs conservative: do not send external Rich Presence image URLs by default until live Discord validation succeeds.
+1. Fix `setRichPresence` so desired activity is recorded even if Discord is disconnected when the match happens.
+2. Add real local write API protection for unsafe methods and JSON content-type/origin/token handling.
+3. Fix profile edit behavior so edits do not silently disable profiles, and clarify rename support.
+4. Rank catalog candidates with profiles so high-confidence catalog game hints can beat broad launcher defaults.
+5. Harden Discord socket discovery/liveness and eventually add nonce-routed background reading if live Discord sends unsolicited events.
+6. Refactor catalog refresher/manual refresh around cancellation and per-source singleflight.
+7. Normalize/migrate old configs containing `lutris_local` so valid sources still start.
+8. Add source-aware match types or alias-driven profile generation for catalog-created profiles.
+9. Keep image URLs conservative until live Discord validation succeeds.
 
 ---
 
@@ -593,9 +637,9 @@ Keep image URLs conservative: do not send external Rich Presence image URLs by d
 ## 13. How to Continue
 
 1. Read this file fully.
-2. Read `docs/plans/2026-04-29-post-kimi-stabilization.md`.
-3. Run `go test -count=1 ./...`, `go vet ./...`, `go test -race ./...`, and `make build`.
-4. Start with Phase A from the post-Kimi plan.
+2. Read `docs/plans/2026-04-29-post-kimi-followup-stabilization.md`.
+3. Run `go test -count=1 ./...`, `go vet ./...`, `go test -race ./...`, `make build`, and `git diff --check`.
+4. Start with Phase A from the follow-up plan: desired presence while Discord is disconnected, then profile edit safety.
 5. Make minimal changes. Add tests first for regressions.
 6. Commit each logical fix and push.
 7. Update this HANDOFF.md if architecture or actual status changes significantly.
