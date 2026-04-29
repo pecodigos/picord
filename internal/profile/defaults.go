@@ -22,6 +22,7 @@ func DefaultProfiles() []Profile {
 		}
 		for i := range defaultCache {
 			defaultCache[i].isDefault = true
+			defaultCache[i].Enabled = true
 			if defaultCache[i].Priority == 0 {
 				defaultCache[i].Priority = 5
 			}
