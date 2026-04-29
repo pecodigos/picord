@@ -3,7 +3,7 @@
 > **Date:** 2026-04-29  
 > **Branch:** \`master\`  
 > **Go:** 1.21+  
-> **Status:** Builds, \`go test ./...\` passes (38 tests), \`go vet\` clean.
+> **Status:** Builds, \`go test ./...\` passes (42 tests), \`go vet\` clean.
 
 ---
 
@@ -24,6 +24,7 @@ cmd/picord/
   cli.go           (248L) — CLI: run, status, profiles, override, clear, reload, help.
 internal/rpc/
   client.go        (314L) — Custom Discord IPC wire protocol. Handshake, frame I/O, reconnect.
+  client_test.go   (296L) — Mock Unix socket tests for handshake, SET_ACTIVITY, reconnect, close.
 internal/monitor/
   monitor.go       (170L) — /proc scanner, poll loop, process name resolution.
   window_linux.go  (248L) — Window title detection per compositor.
@@ -82,7 +83,7 @@ Makefile — build, run, clean, install, fmt, lint, tidy, deb, appimage
 ```bash
 cd /mnt/hdd/Code/2026/picord
 make build                          # go build -ldflags="-s -w" -o bin/picord ./cmd/picord
-go test ./...                       # 38 tests
+go test ./...                       # 42 tests
 go vet ./...
 
 # Run daemon
@@ -383,11 +384,12 @@ profiles:                       # Optional custom profiles
 
 ## 8. Test Coverage
 
-38 tests across 5 packages. Run: go test ./...
+42 tests across 6 packages. Run: go test ./...
 
 | File | Tests | What they cover |
 |------|-------|-----------------|
 | cmd/picord/main_test.go | 1 | Fallback default config keeps scan-all enabled |
+| internal/rpc/client_test.go | 4 | Mock Discord IPC socket: handshake, SET_ACTIVITY frame format, reconnect, close |
 | profile/matcher_test.go | 8 | process_name exact+ci, window_title substring, regex, invalid regex, disabled, FindBestMatch priority + tie-breaker |
 | profile/manager_test.go | 8 | Merge defaults+user, user overrides default, add, update, delete, sort, match, ReplaceUser keeps defaults |
 | profile/render_test.go | 5 | No templates, {process_name}, {window_title}, mixed, empty window title |
@@ -396,7 +398,6 @@ profiles:                       # Optional custom profiles
 | monitor/window_linux_test.go | 3 | Hyprland JSON parse, Sway tree walk, DetectCompositor for all 5 types |
 
 **Untested (0% coverage):**
-- internal/rpc/client.go — needs mock Unix socket
 - internal/server/server.go — needs HTTP test server
 - internal/tray/tray.go — GUI, hard to unit test
 - cmd/picord/cli.go — needs mock HTTP server
@@ -406,11 +407,12 @@ profiles:                       # Optional custom profiles
 
 ## 9. Known Issues & Limitations
 
-### CRITICAL: Never tested against real Discord
-- rpc/client.go implements the protocol per Discord docs but has never connected to a live Discord client.
+### CRITICAL: Needs live Discord validation
+- rpc/client.go now has mock Unix socket coverage for handshake, SET_ACTIVITY, reconnect, and close.
+- It still has not connected to a live Discord client in this repo.
 - Handshake expects cmd:"DISPATCH" + evt:"READY". Real Discord may differ.
-- sendCommand() reads exactly ONE response frame. Unsolicited Discord events will break it.
-- **Fix:** Add a background frame reader goroutine that routes responses by nonce. Handle unsolicited events separately.
+- sendCommand() reads exactly ONE response frame. Unsolicited Discord events could break it.
+- **Fix if real Discord exposes this:** Add a background frame reader goroutine that routes responses by nonce and handles unsolicited events separately.
 
 ### RESOLVED: Pre-emptive process matching
 - `scan_all_processes` now defaults to true and scans every numeric `/proc/<pid>` entry.
@@ -445,7 +447,7 @@ profiles:                       # Optional custom profiles
 | Feature | Status |
 |---------|--------|
 | Compilation | ✅ Go 1.21+ |
-| Tests | ✅ 38/38 pass |
+| Tests | ✅ 42/42 pass |
 | go vet | ✅ Clean |
 | CLI commands | ✅ All work |
 | Debug logging | ✅ --debug flag |
@@ -456,7 +458,7 @@ profiles:                       # Optional custom profiles
 | Window title detection | ✅ Hyprland, Sway, X11 (best-effort) |
 | Auto-reconnect | ✅ Reconnect() + background ticker |
 | System tray | ⚠️ Depends on compositor SNI support |
-| Actual Discord RPC | ❌ NEVER TESTED with real Discord |
+| Actual Discord RPC | ⚠️ Mock socket covered; needs live Discord validation |
 | Pre-emptive matching | ✅ scan_all_processes default covers ordinary apps/games |
 | KDE dbus fallback | ❌ Stub |
 | AppImage packaging | ❌ Makefile stub |
@@ -484,8 +486,8 @@ Design choices:
 - Keep the old IPC-only mode behind `scan_all_processes: false` for users who want the narrower legacy behavior.
 - Avoid profile-manager changes in this phase; matching semantics stay the same.
 
-### Phase 2. RPC client tests (next)
-Create `internal/rpc/client_test.go` with a mock Unix socket server implementing the Discord protocol. Test handshake, SET_ACTIVITY frame format, reconnect, and close. This prepares for real-Discord validation.
+### Phase 2. RPC client tests (complete)
+Created `internal/rpc/client_test.go` with a mock Unix socket server implementing the Discord protocol. Covered handshake, SET_ACTIVITY frame format, reconnect, and close. Live Discord validation remains the next RPC step.
 
 ### Phase 3. Follow-up improvements
 1. TEST WITH REAL DISCORD: create Discord app → set app_id → run `./bin/picord --debug run` with Discord running, capture real handshake/SET_ACTIVITY behavior.
