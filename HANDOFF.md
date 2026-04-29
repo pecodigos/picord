@@ -4,6 +4,8 @@
 > **Branch:** \`master\`  
 > **Go:** 1.21+  
 > **Status:** Builds; `go test -count=1 ./...`, `go vet ./...`, `go test -race ./...`, `make build`, and diff checks pass after Kimi's second stabilization pass. Latest next-step plan: `docs/plans/2026-04-29-post-kimi-followup-stabilization.md`.
+>
+> **Resolved in latest commit:** `setRichPresence` now stores desired activity even when Discord is disconnected (replayed on reconnect). Write endpoints enforce same-origin/localhost for unsafe methods. Profile edits preserve `Enabled` state.
 
 ---
 
@@ -13,7 +15,7 @@ Picord is a Linux daemon that auto-sets Discord Rich Presence. By default it sca
 
 **Current constraint:** Picord still needs a running Discord client and a valid Discord application client ID before it can publish Rich Presence. The scanner no longer depends on games opening Discord IPC sockets.
 
-**Follow-up blocker:** Kimi's second pass fixed the previous P0 catalog integration items, but Discord availability and local write safety still need work. `setRichPresence` still returns before recording desired activity when Discord is disconnected, so start-before-Discord can lose the active game. The local API also needs real unsafe-method/CSRF protection beyond narrowed CORS. See `docs/plans/2026-04-29-post-kimi-followup-stabilization.md`.
+**Follow-up resolved:** `setRichPresence` now stores desired activity even when Discord is disconnected (replayed on reconnect). Write endpoints reject cross-origin mutating requests. Profile edits preserve `Enabled` state. Remaining: catalog-vs-profile ranking for broad launcher profiles, live Discord external-image validation. See `docs/plans/2026-04-29-post-kimi-followup-stabilization.md`.
 
 ---
 
