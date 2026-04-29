@@ -221,7 +221,14 @@ func runDaemon(debug bool) int {
 		log.Printf("Config watcher error: %v", configErr)
 	}
 
+	stateDir := server.TokenStateDir()
+	apiToken, tokenErr := server.GenerateToken(stateDir)
+	if tokenErr != nil {
+		log.Printf("Warning: cannot generate API token: %v", tokenErr)
+	}
+
 	webServer := server.New(state, profileMgr, catalogStore)
+	webServer.SetToken(apiToken)
 	webServer.OnOverrideSet = func(p *profile.Profile) {
 		state.SetOverride(p)
 		if p != nil {

@@ -209,12 +209,14 @@ func TestHandleCatalogProfileFromEntry(t *testing.T) {
 	}
 }
 
-func TestCORS_RejectCrossOriginPOST(t *testing.T) {
+func TestSecurity_RejectCrossOriginPOST(t *testing.T) {
 	srv := New(NewAppState(), profile.NewManager(nil, nil), nil)
+	srv.SetToken("test-token")
 	handler := srv.Handler()
 
 	req := httptest.NewRequest(http.MethodPost, "/api/override", nil)
 	req.Header.Set("Origin", "https://evil.com")
+	req.Header.Set("X-Picord-Token", "test-token")
 	rr := httptest.NewRecorder()
 	handler.ServeHTTP(rr, req)
 
@@ -223,18 +225,89 @@ func TestCORS_RejectCrossOriginPOST(t *testing.T) {
 	}
 }
 
-func TestCORS_AlllowLocalOriginPOST(t *testing.T) {
+func TestSecurity_AllowLocalOriginPOSTWithToken(t *testing.T) {
 	srv := New(NewAppState(), profile.NewManager(nil, nil), nil)
+	srv.SetToken("test-token")
 	handler := srv.Handler()
 
 	body := []byte(`{"name":"test","activity":{"details":"test"}}`)
 	req := httptest.NewRequest(http.MethodPost, "/api/override", bytes.NewReader(body))
 	req.Header.Set("Origin", "http://localhost:17970")
 	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("X-Picord-Token", "test-token")
 	rr := httptest.NewRecorder()
 	handler.ServeHTTP(rr, req)
 
 	if rr.Code == http.StatusForbidden {
-		t.Errorf("expected local origin POST to be allowed, got 403")
+		t.Errorf("expected local origin POST with token to be allowed, got 403")
+	}
+}
+
+func TestSecurity_RejectMissingToken(t *testing.T) {
+	srv := New(NewAppState(), profile.NewManager(nil, nil), nil)
+	srv.SetToken("test-token")
+	handler := srv.Handler()
+
+	body := []byte(`{"name":"test","activity":{"details":"test"}}`)
+	req := httptest.NewRequest(http.MethodPost, "/api/override", bytes.NewReader(body))
+	req.Header.Set("Origin", "http://localhost:17970")
+	req.Header.Set("Content-Type", "application/json")
+	// No X-Picord-Token header.
+	rr := httptest.NewRecorder()
+	handler.ServeHTTP(rr, req)
+
+	if rr.Code != http.StatusForbidden {
+		t.Errorf("expected 403 for missing token, got %d", rr.Code)
+	}
+}
+
+func TestSecurity_RejectWrongToken(t *testing.T) {
+	srv := New(NewAppState(), profile.NewManager(nil, nil), nil)
+	srv.SetToken("test-token")
+	handler := srv.Handler()
+
+	body := []byte(`{"name":"test","activity":{"details":"test"}}`)
+	req := httptest.NewRequest(http.MethodPost, "/api/override", bytes.NewReader(body))
+	req.Header.Set("Origin", "http://localhost:17970")
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("X-Picord-Token", "wrong-token")
+	rr := httptest.NewRecorder()
+	handler.ServeHTTP(rr, req)
+
+	if rr.Code != http.StatusForbidden {
+		t.Errorf("expected 403 for wrong token, got %d", rr.Code)
+	}
+}
+
+func TestSecurity_RejectBadContentType(t *testing.T) {
+	srv := New(NewAppState(), profile.NewManager(nil, nil), nil)
+	srv.SetToken("test-token")
+	handler := srv.Handler()
+
+	body := []byte(`{"name":"test","activity":{"details":"test"}}`)
+	req := httptest.NewRequest(http.MethodPost, "/api/override", bytes.NewReader(body))
+	req.Header.Set("Origin", "http://localhost:17970")
+	req.Header.Set("Content-Type", "text/plain")
+	req.Header.Set("X-Picord-Token", "test-token")
+	rr := httptest.NewRecorder()
+	handler.ServeHTTP(rr, req)
+
+	if rr.Code != http.StatusUnsupportedMediaType {
+		t.Errorf("expected 415 for bad content-type, got %d", rr.Code)
+	}
+}
+
+func TestSecurity_GETWithoutTokenAllowed(t *testing.T) {
+	srv := New(NewAppState(), profile.NewManager(nil, nil), nil)
+	srv.SetToken("test-token")
+	handler := srv.Handler()
+
+	req := httptest.NewRequest(http.MethodGet, "/api/status", nil)
+	req.Header.Set("Origin", "http://localhost:17970")
+	rr := httptest.NewRecorder()
+	handler.ServeHTTP(rr, req)
+
+	if rr.Code == http.StatusForbidden {
+		t.Errorf("expected GET without token to be allowed, got 403")
 	}
 }

@@ -1,5 +1,10 @@
 const API = '';
 
+function getToken() {
+  const meta = document.querySelector('meta[name="picord-token"]');
+  return meta ? meta.content : '';
+}
+
 async function checkOK(r) {
   if (!r.ok) {
     const text = await r.text().catch(() => '');
@@ -17,7 +22,10 @@ async function get(path) {
 async function post(path, body) {
   const r = await fetch(API + path, {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
+    headers: {
+      'Content-Type': 'application/json',
+      'X-Picord-Token': getToken(),
+    },
     body: JSON.stringify(body),
   });
   await checkOK(r);
@@ -27,7 +35,10 @@ async function post(path, body) {
 async function put(path, body) {
   const r = await fetch(API + path, {
     method: 'PUT',
-    headers: { 'Content-Type': 'application/json' },
+    headers: {
+      'Content-Type': 'application/json',
+      'X-Picord-Token': getToken(),
+    },
     body: JSON.stringify(body),
   });
   await checkOK(r);
@@ -35,7 +46,10 @@ async function put(path, body) {
 }
 
 async function del(path) {
-  const r = await fetch(API + path, { method: 'DELETE' });
+  const r = await fetch(API + path, {
+    method: 'DELETE',
+    headers: { 'X-Picord-Token': getToken() },
+  });
   await checkOK(r);
   return r.json();
 }

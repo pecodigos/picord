@@ -1,6 +1,7 @@
 package server
 
 import (
+	"bytes"
 	"embed"
 	"encoding/json"
 	"io/fs"
@@ -79,12 +80,17 @@ type Server struct {
 	state          *AppState
 	profileManager *profile.Manager
 	catalogStore   *catalog.Store
+	token          string
 
 	OnOverrideSet   func(*profile.Profile)
 	OnOverrideClear func()
 	OnAutoDetectSet func(bool)
 	OnReloadConfig  func()
 	OnProfilesSaved func([]profile.Profile)
+}
+
+func (srv *Server) SetToken(t string) {
+	srv.token = t
 }
 
 type sanitizedProcess struct {
@@ -129,7 +135,25 @@ func (srv *Server) Handler() http.Handler {
 	mux := http.NewServeMux()
 
 	webFS, _ := fs.Sub(webAssets, "web")
-	mux.Handle("/", http.FileServer(http.FS(webFS)))
+	fileServer := http.FileServer(http.FS(webFS))
+
+	// Serve index.html with token injected for the browser UI.
+	mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/" && r.URL.Path != "/index.html" {
+			fileServer.ServeHTTP(w, r)
+			return
+		}
+		data, err := webAssets.ReadFile("web/index.html")
+		if err != nil {
+			http.Error(w, "not found", 404)
+			return
+		}
+		if srv.token != "" {
+			data = bytes.Replace(data, []byte("<head>"), []byte("<head>\n<meta name=\"picord-token\" content=\""+srv.token+"\">"), 1)
+		}
+		w.Header().Set("Content-Type", "text/html; charset=utf-8")
+		w.Write(data)
+	})
 
 	mux.HandleFunc("/api/status", srv.handleStatus)
 	mux.HandleFunc("/api/profiles", srv.handleProfiles)
@@ -145,7 +169,7 @@ func (srv *Server) Handler() http.Handler {
 	mux.HandleFunc("/api/catalog/refresh", srv.handleCatalogRefresh)
 	mux.HandleFunc("/api/catalog/profiles/from-entry/", srv.handleCatalogProfileFromEntry)
 
-	return withCORS(mux)
+	return withSecurity(srv.token, mux)
 }
 
 func (srv *Server) handleStatus(w http.ResponseWriter, r *http.Request) {
@@ -528,24 +552,43 @@ func isSafeMethod(m string) bool {
 	return m == http.MethodGet || m == http.MethodHead || m == http.MethodOptions
 }
 
-func withCORS(next http.Handler) http.Handler {
+func withSecurity(token string, next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		origin := r.Header.Get("Origin")
 		local := isLocalOrigin(origin)
 		if local {
 			w.Header().Set("Access-Control-Allow-Origin", origin)
 			w.Header().Set("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, OPTIONS")
-			w.Header().Set("Access-Control-Allow-Headers", "Content-Type")
+			w.Header().Set("Access-Control-Allow-Headers", "Content-Type, X-Picord-Token")
 		}
 		if r.Method == http.MethodOptions {
 			w.WriteHeader(200)
 			return
 		}
+
 		// Reject cross-origin mutating requests.
 		if !isSafeMethod(r.Method) && !local {
-			http.Error(w, `{"error":"Forbidden"}`, http.StatusForbidden)
+			writeError(w, "Forbidden", http.StatusForbidden)
 			return
 		}
+
+		// Require token for unsafe methods when token protection is active.
+		if token != "" && !isSafeMethod(r.Method) {
+			if r.Header.Get("X-Picord-Token") != token {
+				writeError(w, "Forbidden", http.StatusForbidden)
+				return
+			}
+		}
+
+		// Require correct Content-Type for JSON body endpoints.
+		if !isSafeMethod(r.Method) && strings.HasPrefix(r.URL.Path, "/api/") {
+			ct := r.Header.Get("Content-Type")
+			if ct != "" && !strings.Contains(ct, "application/json") {
+				writeError(w, "Content-Type must be application/json", http.StatusUnsupportedMediaType)
+				return
+			}
+		}
+
 		next.ServeHTTP(w, r)
 	})
 }

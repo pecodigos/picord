@@ -16,6 +16,7 @@ import (
 	"github.com/pecodigos/picord/internal/config"
 	"github.com/pecodigos/picord/internal/profile"
 	"github.com/pecodigos/picord/internal/rpc"
+	"github.com/pecodigos/picord/internal/server"
 )
 
 func runCLI(args []string, debug bool) int {
@@ -89,6 +90,11 @@ func getAPIBase() string {
 	return fmt.Sprintf("http://127.0.0.1:%d", cfg.WebPort)
 }
 
+func getAPIToken() string {
+	token, _ := server.LoadToken(server.TokenStateDir())
+	return token
+}
+
 func apiGet(path string) (*http.Response, error) {
 	return http.Get(getAPIBase() + path)
 }
@@ -98,13 +104,40 @@ func apiPost(path string, body any) (*http.Response, error) {
 	if err != nil {
 		return nil, err
 	}
-	return http.Post(getAPIBase()+path, "application/json", bytes.NewReader(data))
+	req, err := http.NewRequest(http.MethodPost, getAPIBase()+path, bytes.NewReader(data))
+	if err != nil {
+		return nil, err
+	}
+	req.Header.Set("Content-Type", "application/json")
+	if t := getAPIToken(); t != "" {
+		req.Header.Set("X-Picord-Token", t)
+	}
+	return http.DefaultClient.Do(req)
+}
+
+func apiPut(path string, body any) (*http.Response, error) {
+	data, err := json.Marshal(body)
+	if err != nil {
+		return nil, err
+	}
+	req, err := http.NewRequest(http.MethodPut, getAPIBase()+path, bytes.NewReader(data))
+	if err != nil {
+		return nil, err
+	}
+	req.Header.Set("Content-Type", "application/json")
+	if t := getAPIToken(); t != "" {
+		req.Header.Set("X-Picord-Token", t)
+	}
+	return http.DefaultClient.Do(req)
 }
 
 func apiDelete(path string) (*http.Response, error) {
 	req, err := http.NewRequest(http.MethodDelete, getAPIBase()+path, nil)
 	if err != nil {
 		return nil, err
+	}
+	if t := getAPIToken(); t != "" {
+		req.Header.Set("X-Picord-Token", t)
 	}
 	return http.DefaultClient.Do(req)
 }
