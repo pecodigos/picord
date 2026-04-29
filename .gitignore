@@ -19,3 +19,10 @@ Thumbs.db
 
 # Build artifacts
 dist/
+
+# Database and cache
+*.db
+*.db-shm
+*.db-wal
+.cache/
+.local/
