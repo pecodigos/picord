@@ -3,13 +3,13 @@
 > **Date:** 2026-04-29  
 > **Branch:** \`master\`  
 > **Go:** 1.21+  
-> **Status:** Builds, \`go test ./...\` passes (46 tests), \`go vet\` clean.
+> **Status:** Builds, \`go test ./...\` passes (57 tests), \`go vet\` clean.
 
 ---
 
 ## 1. What This Is
 
-Picord is a Linux daemon that auto-sets Discord Rich Presence. By default it scans all numeric \`/proc/<pid>\` entries, matches them against profiles, and sends \`SET_ACTIVITY\` over Discord's local IPC protocol. Users can set \`scan_all_processes: false\` to use the narrower legacy scan that only considers processes already connected to Discord IPC. Features: system tray (D-Bus SNI), web GUI (embedded SPA at \`localhost:17970\`), CLI, 48 built-in profiles, template variables, window title matching, auto-reconnect.
+Picord is a Linux daemon that auto-sets Discord Rich Presence. By default it scans all numeric \`/proc/<pid>\` entries, extracts game identity hints (Steam AppID, Lutris slug, desktop ID), matches against built-in profiles and a local SQLite catalog, and sends \`SET_ACTIVITY\` over Discord's local IPC protocol. Users can set \`scan_all_processes: false\` to use the narrower legacy scan. Features: system tray (D-Bus SNI), web GUI (embedded SPA at \`localhost:17970\`), CLI, 48 built-in profiles, rich game catalog, template variables, window title matching, auto-reconnect, background catalog refresh.
 
 **Current constraint:** Picord still needs a running Discord client and a valid Discord application client ID before it can publish Rich Presence. The scanner no longer depends on games opening Discord IPC sockets.
 
@@ -34,17 +34,31 @@ internal/profile/
   types.go         (43L) — Profile, MatchRule, Activity, Button structs.
   matcher.go       (84L) — Profile.Matches(), FindBestMatch().
   manager.go       (161L) — Thread-safe profile store. Merge, CRUD, sort.
-  render.go        (29L) — Template var replacement: {process_name}, {window_title}.
+  render.go        (29L) — Template var replacement: {process_name}, {window_title}, {title}, {source}, {steam_app_id}.
   defaults.go      (33L) — //go:embed defaults.yaml loader.
   defaults.yaml    (549L) — 48 built-in profiles.
   matcher_test.go  (131L)
   manager_test.go  (133L)
   render_test.go   (82L)
+internal/catalog/
+  types.go         — Entry, Alias, Image, DetectionHints, MatchResult structs.
+  normalize.go     — Title normalization for search/matching.
+  store.go         — SQLite store: Open, Migrate, UpsertEntry, Search, SourceState.
+  migrations.go    — Schema DDL for entries, aliases, images, source_state.
+  matcher.go       — Catalog matcher: Steam AppID → Lutris slug → desktop ID → executable → title.
+  images.go        — Image cache download, SHA256 dedup, ImageResolver with safe modes.
+  source.go        — Source interface.
+  source_steam.go  — Parse appmanifest_*.acf and import Steam titles.
+  source_lutris.go — Paginated Lutris public API importer.
+  source_desktop.go — Parse .desktop files for native apps.
+  refresher.go     — Background refresh goroutine with rate limits.
+  store_test.go, matcher_test.go, images_test.go, source_*_test.go, refresher_test.go
 internal/config/
-  config.go        (167L) — YAML load/save, fsnotify watcher, validation.
+  config.go        (167L) — YAML load/save, fsnotify watcher, validation. Adds CatalogConfig and ImageConfig.
   config_test.go   (145L)
 internal/server/
-  server.go        (336L) — HTTP API (7 endpoints), CORS, AppState.
+  server.go        (336L) — HTTP API (12+ endpoints), CORS, AppState. Adds catalog endpoints.
+  server_test.go   — Tests for catalog endpoints.
   web/index.html
   web/css/style.css
   web/js/api.js
@@ -397,7 +411,7 @@ profiles:                       # Optional custom profiles
 
 ## 8. Test Coverage
 
-46 tests across 6 packages. Run: go test ./...
+57 tests across 7 packages. Run: go test ./...
 
 | File | Tests | What they cover |
 |------|-------|-----------------|
@@ -409,9 +423,16 @@ profiles:                       # Optional custom profiles
 | config/config_test.go | 6 | Load/save round-trip, defaults on missing file, scan_all_processes default/false handling, validation clamping, invalid YAML error |
 | monitor/monitor_test.go | 7 | Mock /proc: IPC-only scan, all-process scan, ScanNow options, dedup, Start/Stop no panic |
 | monitor/window_linux_test.go | 3 | Hyprland JSON parse, Sway tree walk, DetectCompositor for all 5 types |
+| internal/catalog/store_test.go | 7 | NormalizeTitle, migration, UpsertEntry, GetEntry, SearchByAlias, SearchTitlePrefix, ExactTitleMatch, SourceState |
+| internal/catalog/matcher_test.go | 6 | Steam AppID match, Lutris slug match, executable match, exact title match, no match, ToProfile conversion |
+| internal/catalog/images_test.go | 4 | DownloadImage accepts PNG, rejects HTML/text, ImageResolver modes, ImageCacheDir |
+| internal/catalog/source_steam_test.go | 2 | ACF parser, SteamLocalSource refresh with mock steamapps dir |
+| internal/catalog/source_lutris_test.go | 3 | Lutris public refresh with httptest, MaxPages respect, offline skip |
+| internal/catalog/source_desktop_test.go | 2 | Desktop file parser, DesktopSource refresh with mock applications dir |
+| internal/catalog/refresher_test.go | 3 | Start/Stop, Stop waits, BuildSources valid/unknown |
+| internal/server/server_test.go | 6 | Catalog status, search, entry, refresh, profile-from-entry, missing query handling |
 
 **Untested (0% coverage):**
-- internal/server/server.go — needs HTTP test server
 - internal/tray/tray.go — GUI, hard to unit test
 - cmd/picord/cli.go — needs mock HTTP server
 - cmd/picord/main.go — mostly integration-only (defaultConfig helper covered; rpcManager tested via main_test.go)

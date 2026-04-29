@@ -7,10 +7,12 @@ Runs in the background with a system tray icon, automatically detects games and 
 ## Features
 
 - **Auto-Detect** — Scans running processes every 2 seconds, matches against built-in profiles
+- **Rich Game Catalog** — Local SQLite database with titles, aliases, and image metadata from Steam, Lutris, and desktop entries
+- **Smart Matching** — Detects Steam AppID from `/proc` environment and command line, Lutris slugs, and desktop IDs
 - **System Tray** — D-Bus StatusNotifierItem, works on Wayland (Hyprland, Sway, KDE) and X11
-- **Web GUI** — Settings dashboard at `http://localhost:17970` for managing profiles
+- **Web GUI** — Settings dashboard at `http://localhost:17970` for managing profiles and searching the catalog
 - **48 Built-in Profiles** — Emulators (RetroArch, Dolphin, PCSX2, RPCS3, Yuzu, etc.), games, editors, media players
-- **Custom Profiles** — Add your own via the GUI or YAML config
+- **Custom Profiles** — Add your own via the GUI or YAML config; save catalog results as profiles
 - **Manual Override** — Set any custom presence from the tray or GUI
 - **Config Auto-Reload** — Edit `~/.config/picord/config.yaml` and it picks up changes instantly
 - **Linger Fix** — Clears presence when the app/game closes
@@ -110,6 +112,16 @@ app_id: "123456789012345678"
 poll_interval: 2
 web_port: 17970
 scan_all_processes: true
+catalog:
+  enabled: true
+  auto_refresh: true
+  sources: [steam_local, desktop]
+  refresh_hours: 24
+images:
+  mode: generic                # generic | asset_key | external_url
+  cache_enabled: true
+  max_cache_mb: 512
+  generic_asset_key: "picord_game"
 profiles:
   - name: "My Custom Game"
     match:
@@ -136,6 +148,40 @@ profiles:
 
 Set `scan_all_processes: false` to use the narrower legacy mode that only considers processes with open Discord IPC sockets.
 
+### Catalog image modes
+
+Picord distinguishes between **catalog images** (for the UI and metadata) and **Discord Rich Presence images** (what Discord actually displays).
+
+| Mode | Behavior | Safety |
+|------|----------|--------|
+| `generic` | Always uses `generic_asset_key` (e.g., `picord_game`) | Safest |
+| `asset_key` | Uses profile `large_image` or catalog `discord_asset_key`, falls back to generic | Safe if assets are uploaded |
+| `external_url` | Uses catalog `image_url` directly in the RPC payload | **Unvalidated** — may not work with Discord |
+
+**Important:** `external_url` mode has not been validated against a live Discord client. Use `picord debug-rpc-image --app-id <ID> --external-url <URL>` to test before enabling it.
+
+### Catalog CLI
+
+```bash
+# Check catalog status
+picord catalog status
+
+# Search the local catalog
+picord catalog search "Hollow Knight"
+
+# Refresh local Steam metadata
+picord catalog refresh --source steam_local
+
+# Refresh desktop entries
+picord catalog refresh --source desktop
+
+# Refresh Lutris public API (opt-in, large download)
+picord catalog refresh --source lutris_public --max-pages 3
+
+# Save a catalog entry as a custom profile
+picord profile from-catalog <entry-id>
+```
+
 ## Built-in Profiles
 
 48 profiles ship embedded in the binary covering:
@@ -152,12 +198,28 @@ Set `scan_all_processes: false` to use the narrower legacy mode that only consid
 
 **Media**: Spotify, VLC, mpv, Firefox, Chromium, OBS Studio, Discord, Wine, Proton
 
+## Storage Paths
+
+| Data | Default Path |
+|------|-------------|
+| Config | `~/.config/picord/config.yaml` |
+| Catalog database | `~/.local/share/picord/catalog.db` |
+| Image cache | `~/.cache/picord/images` |
+| Logs | `~/.local/state/picord/picord.log` |
+
+## Privacy
+
+- Picord reads only an **allowlisted subset** of `/proc/<pid>/environ` (SteamAppId, SteamGameId, etc.). Full environment is never exposed to the API or logs.
+- Public catalog sources (e.g., Lutris API) are **opt-in** and rate-limited.
+- No Discord account tokens or unofficial APIs are used.
+
 ## How It Works
 
 1. **Scans** running processes under `/proc` (default) or only Discord IPC-connected processes when `scan_all_processes: false`
-2. **Matches** detected process names and window titles against built-in + user profiles
-3. **Sets** Rich Presence via Discord's local IPC socket (`$XDG_RUNTIME_DIR/discord-ipc-0`)
-4. **Clears** presence when the matched process terminates
+2. **Extracts** game identity hints: Steam AppID, Lutris slug, desktop ID, executable path, window title
+3. **Matches** in order: user profiles → catalog by Steam AppID → catalog by Lutris slug → catalog by desktop ID → catalog by executable → catalog by title
+4. **Sets** Rich Presence via Discord's local IPC socket (`$XDG_RUNTIME_DIR/discord-ipc-0`)
+5. **Clears** presence when the matched process terminates
 
 Picord connects to Discord's existing Rich Presence socket — it works alongside Discord, not instead of it.
 
