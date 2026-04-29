@@ -141,7 +141,7 @@ func runDaemon() int {
 
 	httpServer := server.StartServer(fmt.Sprintf("127.0.0.1:%d", cfg.WebPort), webServer)
 
-	procMonitor := monitor.New(cfg.PollInterval, func(procs []profile.DetectedProcess) {
+	procMonitor := monitor.NewWithOptions(cfg.PollInterval, cfg.ScanAllProcesses, func(procs []profile.DetectedProcess) {
 		state.SetDetected(procs)
 
 		if state.HasOverride() || !state.AutoDetectEnabled() {
@@ -254,9 +254,10 @@ func configDirPath() string {
 
 func defaultConfig() config.AppConfig {
 	return config.AppConfig{
-		AppID:        "",
-		PollInterval: 2,
-		WebPort:      17970,
+		AppID:            "",
+		PollInterval:     2,
+		WebPort:          17970,
+		ScanAllProcesses: true,
 	}
 }
 
