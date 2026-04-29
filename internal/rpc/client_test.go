@@ -295,6 +295,48 @@ func TestClose_SendsCloseFrameAndMarksDisconnected(t *testing.T) {
 	}
 }
 
+func TestSendCommand_MarksClosedOnError(t *testing.T) {
+	dir := t.TempDir()
+	socketPath := filepath.Join(dir, "discord-ipc-0")
+	listener, err := net.Listen("unix", socketPath)
+	if err != nil {
+		t.Fatalf("listen: %v", err)
+	}
+	defer listener.Close()
+
+	go func() {
+		conn, err := listener.Accept()
+		if err != nil {
+			return
+		}
+		defer conn.Close()
+		// Read handshake and respond with READY.
+		_, _, _ = readMockFrame(conn)
+		resp := map[string]any{"cmd": "DISPATCH", "evt": "READY", "data": map[string]any{}}
+		_ = writeMockFrame(conn, opFrame, resp)
+		// Read SET_ACTIVITY then close the connection abruptly (no response).
+		_, _, _ = readMockFrame(conn)
+	}()
+
+	t.Setenv("DISCORD_IPC_PATH", socketPath)
+
+	client, err := NewClient("test-app-id")
+	if err != nil {
+		t.Fatalf("NewClient failed: %v", err)
+	}
+	if !client.IsConnected() {
+		t.Fatal("expected client to be connected after handshake")
+	}
+
+	err = client.SetActivity(&RichActivity{Details: "test"})
+	if err == nil {
+		t.Fatal("expected error after server closed connection mid-command")
+	}
+	if client.IsConnected() {
+		t.Fatal("expected client to be marked disconnected after read error")
+	}
+}
+
 func TestDiscoverSocket_EnvOverride(t *testing.T) {
 	dir := t.TempDir()
 	overridePath := filepath.Join(dir, "override.sock")

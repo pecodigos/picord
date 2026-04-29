@@ -95,7 +95,11 @@ func (rm *rpcManager) connect() error {
 	rm.client = c
 	// Replay the last desired activity so presence appears after reconnect.
 	if rm.desiredActivity != nil {
-		_ = c.SetActivity(rm.desiredActivity)
+		if rerr := c.SetActivity(rm.desiredActivity); rerr != nil {
+			log.Printf("Error replaying activity after reconnect: %v", rerr)
+		} else {
+			log.Println("Replayed desired activity after reconnect")
+		}
 	}
 	return nil
 }
@@ -500,13 +504,11 @@ func setRichPresence(rm *rpcManager, p *profile.Profile, proc *profile.DetectedP
 	// Always store the desired activity so it can be replayed on reconnect.
 	if err := rm.setActivity(activity); err != nil {
 		log.Printf("Error setting activity: %v, attempting reconnect", err)
-		if rerr := rm.connect(); rerr == nil {
-			if err2 := rm.setActivity(activity); err2 != nil {
-				log.Printf("Error setting activity after reconnect: %v", err2)
-			}
-		} else {
+		if rerr := rm.connect(); rerr != nil {
 			log.Printf("Reconnect failed: %v", rerr)
 		}
+		// connect() already replays desiredActivity on success;
+		// do not send a duplicate here.
 	}
 }
 

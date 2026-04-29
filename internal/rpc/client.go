@@ -188,11 +188,21 @@ func (c *Client) sendCommand(cmd string, args map[string]any) (map[string]any, e
 	}
 
 	if err := c.writeFrame(opFrame, data); err != nil {
+		c.closed = true
+		if c.conn != nil {
+			c.conn.Close()
+			c.conn = nil
+		}
 		return nil, fmt.Errorf("send command: %w", err)
 	}
 
 	respData, err := c.readFrame()
 	if err != nil {
+		c.closed = true
+		if c.conn != nil {
+			c.conn.Close()
+			c.conn = nil
+		}
 		return nil, fmt.Errorf("read response: %w", err)
 	}
 
