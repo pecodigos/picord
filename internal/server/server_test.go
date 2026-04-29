@@ -208,3 +208,33 @@ func TestHandleCatalogProfileFromEntry(t *testing.T) {
 		t.Errorf("large_text=%q, want Doom Eternal", p.Activity.LargeText)
 	}
 }
+
+func TestCORS_RejectCrossOriginPOST(t *testing.T) {
+	srv := New(NewAppState(), profile.NewManager(nil, nil), nil)
+	handler := srv.Handler()
+
+	req := httptest.NewRequest(http.MethodPost, "/api/override", nil)
+	req.Header.Set("Origin", "https://evil.com")
+	rr := httptest.NewRecorder()
+	handler.ServeHTTP(rr, req)
+
+	if rr.Code != http.StatusForbidden {
+		t.Errorf("expected 403 for cross-origin POST, got %d", rr.Code)
+	}
+}
+
+func TestCORS_AlllowLocalOriginPOST(t *testing.T) {
+	srv := New(NewAppState(), profile.NewManager(nil, nil), nil)
+	handler := srv.Handler()
+
+	body := []byte(`{"name":"test","activity":{"details":"test"}}`)
+	req := httptest.NewRequest(http.MethodPost, "/api/override", bytes.NewReader(body))
+	req.Header.Set("Origin", "http://localhost:17970")
+	req.Header.Set("Content-Type", "application/json")
+	rr := httptest.NewRecorder()
+	handler.ServeHTTP(rr, req)
+
+	if rr.Code == http.StatusForbidden {
+		t.Errorf("expected local origin POST to be allowed, got 403")
+	}
+}

@@ -426,11 +426,7 @@ func findBestCatalogMatch(
 	return best, bestProc
 }
 
-func setRichPresence(rm *rpcManager, p *profile.Profile, proc *profile.DetectedProcess) {
-	if !rm.isConnected() {
-		return
-	}
-
+func buildRichActivity(p *profile.Profile, proc *profile.DetectedProcess) *rpc.RichActivity {
 	act := p.Activity
 	if proc != nil {
 		act = profile.RenderActivity(act, *proc)
@@ -462,6 +458,13 @@ func setRichPresence(rm *rpcManager, p *profile.Profile, proc *profile.DetectedP
 		}
 	}
 
+	return activity
+}
+
+func setRichPresence(rm *rpcManager, p *profile.Profile, proc *profile.DetectedProcess) {
+	activity := buildRichActivity(p, proc)
+
+	// Always store the desired activity so it can be replayed on reconnect.
 	if err := rm.setActivity(activity); err != nil {
 		log.Printf("Error setting activity: %v, attempting reconnect", err)
 		if rerr := rm.connect(); rerr == nil {

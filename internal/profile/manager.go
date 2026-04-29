@@ -115,8 +115,12 @@ func (m *Manager) Add(p Profile) {
 	defer m.mu.Unlock()
 
 	if idx, ok := m.byName[p.Name]; ok {
+		existing := m.profiles[idx]
 		m.profiles[idx] = p
-		m.profiles[idx].Enabled = p.Enabled
+		// Preserve identity fields so edits from the UI don't accidentally
+		// disable profiles or change their default status.
+		m.profiles[idx].isDefault = existing.isDefault
+		m.profiles[idx].Enabled = existing.Enabled
 	} else {
 		p.Enabled = true
 		m.profiles = append(m.profiles, p)

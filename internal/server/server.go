@@ -524,16 +524,26 @@ func isLocalOrigin(origin string) bool {
 		origin == "http://127.0.0.1"
 }
 
+func isSafeMethod(m string) bool {
+	return m == http.MethodGet || m == http.MethodHead || m == http.MethodOptions
+}
+
 func withCORS(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		origin := r.Header.Get("Origin")
-		if isLocalOrigin(origin) {
+		local := isLocalOrigin(origin)
+		if local {
 			w.Header().Set("Access-Control-Allow-Origin", origin)
 			w.Header().Set("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, OPTIONS")
 			w.Header().Set("Access-Control-Allow-Headers", "Content-Type")
 		}
 		if r.Method == http.MethodOptions {
 			w.WriteHeader(200)
+			return
+		}
+		// Reject cross-origin mutating requests.
+		if !isSafeMethod(r.Method) && !local {
+			http.Error(w, `{"error":"Forbidden"}`, http.StatusForbidden)
 			return
 		}
 		next.ServeHTTP(w, r)

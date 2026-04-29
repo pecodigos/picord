@@ -394,3 +394,35 @@ func TestFindBestCatalogMatch_NoMatch(t *testing.T) {
 		t.Errorf("expected no match, got result=%v proc=%v", result, proc)
 	}
 }
+
+func TestSetRichPresence_StoresDesiredWhenDisconnected(t *testing.T) {
+	// When Discord is not connected, setRichPresence should still store
+	// the desired activity so it can be replayed on reconnect.
+	rm := newRPCManager("test-app")
+	if rm.isConnected() {
+		t.Fatal("expected not connected initially")
+	}
+
+	p := &profile.Profile{
+		Name: "Test Game",
+		Activity: profile.Activity{
+			Details:    "Playing Test Game",
+			LargeImage: "test_image",
+		},
+	}
+	setRichPresence(rm, p, nil)
+
+	rm.mu.Lock()
+	desired := rm.desiredActivity
+	rm.mu.Unlock()
+
+	if desired == nil {
+		t.Fatal("expected desiredActivity to be stored even when disconnected")
+	}
+	if desired.Details != "Playing Test Game" {
+		t.Errorf("details=%q, want Playing Test Game", desired.Details)
+	}
+	if desired.Assets == nil || desired.Assets.LargeImage != "test_image" {
+		t.Error("expected assets to be stored")
+	}
+}

@@ -68,6 +68,22 @@ func TestManager_AddUpdatesExisting(t *testing.T) {
 	}
 }
 
+func TestManager_AddPreservesEnabled(t *testing.T) {
+	m := NewManager(nil, nil)
+	m.Add(Profile{Name: "game", Enabled: true, Priority: 5, Match: MatchRule{Type: MatchProcessName, Value: "a"}})
+
+	// Simulate an edit from the UI that doesn't include the Enabled field.
+	m.Add(Profile{Name: "game", Enabled: false, Priority: 5, Match: MatchRule{Type: MatchProcessName, Value: "a"}})
+
+	p := m.Get("game")
+	if p == nil {
+		t.Fatal("expected game profile")
+	}
+	if !p.Enabled {
+		t.Error("expected Enabled to be preserved as true on edit")
+	}
+}
+
 func TestManager_Delete(t *testing.T) {
 	m := NewManager(nil, nil)
 	m.Add(Profile{Name: "todelete", Enabled: true, Priority: 5, Match: MatchRule{Type: MatchProcessName, Value: "x"}})
