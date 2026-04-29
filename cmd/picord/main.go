@@ -267,34 +267,19 @@ func runDaemon(debug bool) int {
 			return
 		}
 
-		match, proc := profileMgr.Match(procs)
-		if match != nil && proc != nil {
-			if currentProfile == nil || currentProfile.Name != match.Name {
-				log.Printf("[presence] matched profile=%q process=%q", match.Name, proc.Name)
-				currentProfile = match
-				state.SetActive(match.Name, proc.Name)
-				setRichPresence(rpcMgr, match, proc)
-				tray.UpdateStatus(match.Name)
+		ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+		winner := selectBestPresence(ctx, profileMgr, catalogMatcher, imgResolver, procs)
+		cancel()
+
+		if winner != nil {
+			if currentProfile == nil || currentProfile.Name != winner.Profile.Name {
+				log.Printf("[presence] matched %s=%q process=%q", winner.source, winner.Profile.Name, winner.proc.Name)
+				currentProfile = winner.Profile
+				state.SetActive(winner.Profile.Name, winner.proc.Name)
+				setRichPresence(rpcMgr, winner.Profile, winner.proc)
+				tray.UpdateStatus(winner.Profile.Name)
 			}
 			return
-		}
-
-		// Try catalog match if no profile matched and catalog is enabled.
-		if catalogMatcher != nil {
-			ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
-			catResult, catProc := findBestCatalogMatch(ctx, catalogMatcher, procs)
-			cancel()
-			if catResult != nil && catProc != nil {
-				catProfile := catResult.ToProfile(imgResolver)
-				if currentProfile == nil || currentProfile.Name != catProfile.Name {
-					log.Printf("[presence] matched catalog=%q process=%q reason=%s", catProfile.Name, catProc.Name, catResult.Reason)
-					currentProfile = &catProfile
-					state.SetActive(catProfile.Name, catProc.Name)
-					setRichPresence(rpcMgr, &catProfile, catProc)
-					tray.UpdateStatus(catProfile.Name)
-				}
-				return
-			}
 		}
 
 		if currentProfile != nil {
@@ -424,6 +409,53 @@ func findBestCatalogMatch(
 		}
 	}
 	return best, bestProc
+}
+
+type presenceWinner struct {
+	Profile *profile.Profile
+	proc    *profile.DetectedProcess
+	source  string
+}
+
+func selectBestPresence(
+	ctx context.Context,
+	profileMgr *profile.Manager,
+	catalogMatcher *catalog.Matcher,
+	imgResolver catalog.ImageResolver,
+	procs []profile.DetectedProcess,
+) *presenceWinner {
+	profileMatch, profileProc := profileMgr.Match(procs)
+
+	var catResult *catalog.MatchResult
+	var catProc *profile.DetectedProcess
+	if catalogMatcher != nil {
+		catResult, catProc = findBestCatalogMatch(ctx, catalogMatcher, procs)
+	}
+
+	if profileMatch == nil && catResult == nil {
+		return nil
+	}
+	if profileMatch == nil {
+		p := catResult.ToProfile(imgResolver)
+		return &presenceWinner{Profile: &p, proc: catProc, source: "catalog"}
+	}
+	if catResult == nil {
+		return &presenceWinner{Profile: profileMatch, proc: profileProc, source: "profile"}
+	}
+
+	// Both matched: compare scores on a 0-100 scale.
+	// Profile score = priority * 10, capped at 100.
+	profileScore := profileMatch.Priority * 10
+	if profileScore > 100 {
+		profileScore = 100
+	}
+	catalogScore := catResult.Confidence
+
+	if catalogScore > profileScore {
+		p := catResult.ToProfile(imgResolver)
+		return &presenceWinner{Profile: &p, proc: catProc, source: "catalog"}
+	}
+	return &presenceWinner{Profile: profileMatch, proc: profileProc, source: "profile"}
 }
 
 func buildRichActivity(p *profile.Profile, proc *profile.DetectedProcess) *rpc.RichActivity {

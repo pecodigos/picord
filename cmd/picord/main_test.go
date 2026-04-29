@@ -426,3 +426,118 @@ func TestSetRichPresence_StoresDesiredWhenDisconnected(t *testing.T) {
 		t.Error("expected assets to be stored")
 	}
 }
+
+func TestSelectBestPresence_CatalogBeatsBroadProfile(t *testing.T) {
+	dir := t.TempDir()
+	store, err := catalog.Open(filepath.Join(dir, "catalog.db"))
+	if err != nil {
+		t.Fatalf("Open failed: %v", err)
+	}
+	defer store.Close()
+
+	ctx := context.Background()
+	_ = store.UpsertEntry(ctx, catalog.Entry{
+		ID: "steam:620", Source: "steam", SourceID: "620", Kind: catalog.EntryKindGame,
+		Title: "Portal 2", NormalizedTitle: catalog.NormalizeTitle("Portal 2"),
+	}, []catalog.Alias{
+		{EntryID: "steam:620", Kind: catalog.AliasSteamAppID, Value: "620", Normalized: "620", Confidence: 100},
+	})
+
+	// Broad launcher profile with low priority.
+	pm := profile.NewManager([]profile.Profile{
+		{Name: "Steam", Match: profile.MatchRule{Type: profile.MatchProcessName, Value: "steam"}, Priority: 5, Enabled: true},
+	}, nil)
+	matcher := catalog.NewMatcher(store)
+
+	procs := []profile.DetectedProcess{
+		{PID: 1, Name: "steam"},
+		{PID: 2, Name: "portal2", SteamAppID: "620"},
+	}
+
+	winner := selectBestPresence(ctx, pm, matcher, catalog.ImageResolver{}, procs)
+	if winner == nil {
+		t.Fatal("expected a winner")
+	}
+	if winner.source != "catalog" {
+		t.Errorf("expected catalog to win over broad profile, got %s", winner.source)
+	}
+	if winner.Profile.Name != "Portal 2" {
+		t.Errorf("expected Portal 2, got %q", winner.Profile.Name)
+	}
+}
+
+func TestSelectBestPresence_ProfileBeatsLowConfidenceCatalog(t *testing.T) {
+	dir := t.TempDir()
+	store, err := catalog.Open(filepath.Join(dir, "catalog.db"))
+	if err != nil {
+		t.Fatalf("Open failed: %v", err)
+	}
+	defer store.Close()
+
+	ctx := context.Background()
+	_ = store.UpsertEntry(ctx, catalog.Entry{
+		ID: "test:1", Source: "test", SourceID: "1", Kind: catalog.EntryKindGame,
+		Title: "Some Game", NormalizedTitle: catalog.NormalizeTitle("Some Game"),
+	}, nil)
+
+	pm := profile.NewManager([]profile.Profile{
+		{Name: "Doom", Match: profile.MatchRule{Type: profile.MatchProcessName, Value: "doom"}, Priority: 10, Enabled: true},
+	}, nil)
+	matcher := catalog.NewMatcher(store)
+
+	procs := []profile.DetectedProcess{
+		{PID: 1, Name: "doom"},
+	}
+
+	winner := selectBestPresence(ctx, pm, matcher, catalog.ImageResolver{}, procs)
+	if winner == nil {
+		t.Fatal("expected a winner")
+	}
+	if winner.source != "profile" {
+		t.Errorf("expected profile to win, got %s", winner.source)
+	}
+}
+
+func TestSelectBestPresence_TiePrefersProfile(t *testing.T) {
+	dir := t.TempDir()
+	store, err := catalog.Open(filepath.Join(dir, "catalog.db"))
+	if err != nil {
+		t.Fatalf("Open failed: %v", err)
+	}
+	defer store.Close()
+
+	ctx := context.Background()
+	_ = store.UpsertEntry(ctx, catalog.Entry{
+		ID: "steam:620", Source: "steam", SourceID: "620", Kind: catalog.EntryKindGame,
+		Title: "Portal 2", NormalizedTitle: catalog.NormalizeTitle("Portal 2"),
+	}, []catalog.Alias{
+		{EntryID: "steam:620", Kind: catalog.AliasSteamAppID, Value: "620", Normalized: "620", Confidence: 100},
+	})
+
+	// Priority 10 profile => score 100, same as catalog confidence 100.
+	pm := profile.NewManager([]profile.Profile{
+		{Name: "Portal 2", Match: profile.MatchRule{Type: profile.MatchProcessName, Value: "portal2"}, Priority: 10, Enabled: true},
+	}, nil)
+	matcher := catalog.NewMatcher(store)
+
+	procs := []profile.DetectedProcess{
+		{PID: 2, Name: "portal2", SteamAppID: "620"},
+	}
+
+	winner := selectBestPresence(ctx, pm, matcher, catalog.ImageResolver{}, procs)
+	if winner == nil {
+		t.Fatal("expected a winner")
+	}
+	if winner.source != "profile" {
+		t.Errorf("expected profile to win on tie, got %s", winner.source)
+	}
+}
+
+func TestSelectBestPresence_NoMatches(t *testing.T) {
+	pm := profile.NewManager(nil, nil)
+	procs := []profile.DetectedProcess{{PID: 1, Name: "unknown"}}
+	winner := selectBestPresence(context.Background(), pm, nil, catalog.ImageResolver{}, procs)
+	if winner != nil {
+		t.Errorf("expected no winner, got %+v", winner)
+	}
+}
