@@ -62,19 +62,24 @@ func runCLI(args []string, debug bool) int {
 	}
 }
 
-func cmdRun(args []string, debug bool) int {
-	fs := flag.NewFlagSet("run", flag.ExitOnError)
+func parseRunFlags(args []string) daemonOptions {
+	fs := flag.NewFlagSet("run", flag.ContinueOnError)
 	trayEnabled := fs.Bool("tray", true, "Show icon in system tray")
 	noTray := fs.Bool("no-tray", false, "Run without the system tray icon")
 	fs.Parse(args)
 
 	if *noTray {
-		return runDaemonWithOptions(debug, daemonOptions{TrayOverride: boolPtr(false)})
+		return daemonOptions{TrayOverride: boolPtr(false)}
 	}
 	if !*trayEnabled {
-		return runDaemonWithOptions(debug, daemonOptions{TrayOverride: boolPtr(false)})
+		return daemonOptions{TrayOverride: boolPtr(false)}
 	}
-	return runDaemonWithOptions(debug, daemonOptions{TrayOverride: boolPtr(true)})
+	return daemonOptions{TrayOverride: boolPtr(true)}
+}
+
+func cmdRun(args []string, debug bool) int {
+	opts := parseRunFlags(args)
+	return runDaemonWithOptions(debug, opts)
 }
 
 func printUsage() {

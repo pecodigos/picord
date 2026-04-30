@@ -593,6 +593,41 @@ func TestDebugProcessNameMatchesAliases(t *testing.T) {
 	}
 }
 
+func TestParseRunFlags_Default(t *testing.T) {
+	opts := parseRunFlags(nil)
+	if opts.TrayOverride == nil || !*opts.TrayOverride {
+		t.Fatal("expected default run to enable tray")
+	}
+}
+
+func TestParseRunFlags_Tray(t *testing.T) {
+	opts := parseRunFlags([]string{"--tray"})
+	if opts.TrayOverride == nil || !*opts.TrayOverride {
+		t.Fatal("expected --tray to enable tray")
+	}
+}
+
+func TestParseRunFlags_NoTray(t *testing.T) {
+	opts := parseRunFlags([]string{"--no-tray"})
+	if opts.TrayOverride == nil || *opts.TrayOverride {
+		t.Fatal("expected --no-tray to disable tray")
+	}
+}
+
+func TestParseRunFlags_NoTrayWins(t *testing.T) {
+	opts := parseRunFlags([]string{"--tray", "--no-tray"})
+	if opts.TrayOverride == nil || *opts.TrayOverride {
+		t.Fatal("expected --no-tray to override --tray")
+	}
+}
+
+func TestParseRunFlags_TrayEqualsFalse(t *testing.T) {
+	opts := parseRunFlags([]string{"--tray=false"})
+	if opts.TrayOverride == nil || *opts.TrayOverride {
+		t.Fatal("expected --tray=false to disable tray")
+	}
+}
+
 func TestIsExcludedCatalogEntry(t *testing.T) {
 	excluded := []string{
 		"Firefox", "firefox", "Google Chrome", "Discord", "Discord Canary",
