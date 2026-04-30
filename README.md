@@ -10,10 +10,10 @@ Runs in the background with a system tray icon, automatically detects games and 
 - **Rich Game Catalog** — Local SQLite database with titles, aliases, and image metadata from Steam, Lutris, and desktop entries
 - **Smart Matching** — Detects Steam AppID from `/proc` environment and command line, Lutris slugs, and desktop IDs
 - **System Tray** — D-Bus StatusNotifierItem, works on Wayland (Hyprland, Sway, KDE) and X11
-- **Web GUI** — Settings dashboard at `http://localhost:17970` for managing profiles and searching the catalog
+- **GTK Settings** — System tray access to startup, detection, and catalog settings
 - **48 Built-in Profiles** — Emulators (RetroArch, Dolphin, PCSX2, RPCS3, Yuzu, etc.), games, editors, media players
-- **Custom Profiles** — Add your own via the GUI or YAML config; save catalog results as profiles
-- **Manual Override** — Set any custom presence from the tray or GUI
+- **Custom Profiles** — Add your own via YAML config or `picord profile from-catalog <entry-id>`
+- **Manual Override** — Set any custom presence from the tray or CLI
 - **Config Auto-Reload** — Edit `~/.config/picord/config.yaml` and it picks up changes instantly
 - **Linger Fix** — Clears presence when the app/game closes
 
@@ -76,7 +76,7 @@ Edit `~/.config/picord/config.yaml`:
 ```yaml
 app_id: "1499058229571752148"     # Default Picord Discord application ID
 poll_interval: 2                     # Seconds between process scans
-web_port: 17970                      # Web GUI port
+web_port: 17970                      # Local API port for CLI/tray actions
 scan_all_processes: true             # Detect ordinary apps/games, not just Discord IPC clients
 profiles: []                         # Your custom profiles (optional)
 ```
@@ -87,7 +87,7 @@ profiles: []                         # Your custom profiles (optional)
 picord
 ```
 
-A tray icon appears. Right-click for the menu, left-click opens the settings GUI.
+A tray icon appears after login. Right-click for the menu and choose Settings to configure Picord.
 
 ## Autostart
 
@@ -120,7 +120,7 @@ cp icons/picord_128.png ~/.local/share/icons/hicolor/128x128/apps/picord.png
 ```yaml
 app_id: "1499058229571752148"
 poll_interval: 2
-web_port: 17970
+web_port: 17970                      # Local API port
 scan_all_processes: true
 catalog:
   enabled: true
@@ -264,3 +264,4 @@ To add new built-in profiles, edit `internal/profile/defaults.yaml` and open a P
 ## License
 
 MIT
+
