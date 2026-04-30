@@ -434,7 +434,7 @@ func (srv *Server) currentConfig() config.AppConfig {
 
 func settingsFromConfig(cfg config.AppConfig, autoDetect bool) settingsResponse {
 	catalogCfg := cfg.Catalog
-	// Do not expose secrets back through the browser-facing settings API.
+	// Do not expose secrets back through the settings API.
 	catalogCfg.SteamGridDBAPIKey = ""
 	return settingsResponse{
 		AutoDetect:       autoDetect,

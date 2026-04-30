@@ -8,6 +8,7 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
@@ -598,6 +599,36 @@ func TestHandleStatusMatchInfoHiddenByDefault(t *testing.T) {
 	}
 	if resp.MatchInfo != nil {
 		t.Error("expected match_info to be hidden in default status")
+	}
+}
+
+func TestRootReturnsJSON404NotHTML(t *testing.T) {
+	srv := New(NewAppState(), profile.NewManager(nil, nil), nil)
+	handler := srv.Handler()
+
+	req := httptest.NewRequest(http.MethodGet, "/", nil)
+	rr := httptest.NewRecorder()
+	handler.ServeHTTP(rr, req)
+
+	if rr.Code != http.StatusNotFound {
+		t.Errorf("expected 404, got %d", rr.Code)
+	}
+
+	contentType := rr.Header().Get("Content-Type")
+	if !strings.Contains(contentType, "application/json") {
+		t.Errorf("expected Content-Type application/json, got %q", contentType)
+	}
+
+	body := rr.Body.String()
+	for _, htmlSig := range []string{"<html", "<body", "<head", "<!DOCTYPE", "<script", "<style", "<div", "<!doctype"} {
+		if strings.Contains(strings.ToLower(body), htmlSig) {
+			t.Errorf("root response contains HTML signature %q: %s", htmlSig, body)
+		}
+	}
+
+	var resp map[string]any
+	if err := json.Unmarshal(rr.Body.Bytes(), &resp); err != nil {
+		t.Errorf("expected valid JSON response, got: %v", err)
 	}
 }
 
