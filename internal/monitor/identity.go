@@ -1,6 +1,7 @@
 package monitor
 
 import (
+	"log"
 	"path/filepath"
 	"strings"
 
@@ -299,7 +300,10 @@ func ResolveProcessIdentitiesLite(candidatePIDs []int) []profile.DetectedProcess
 }
 
 func resolveIdentitiesFromTable(pt *ProcessTable) []profile.DetectedProcess {
-	windowTitles, _ := GetWindowTitles()
+	windowTitles, err := GetWindowTitles()
+	if err != nil {
+		log.Printf("[monitor] GetWindowTitles: %v", err)
+	}
 
 	// First pass: collect aliases and Steam AppIDs for every process
 	pidAliases := make(map[int][]string)

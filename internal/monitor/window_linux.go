@@ -1,12 +1,36 @@
 package monitor
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"os"
 	"os/exec"
 	"strings"
+	"sync"
+	"time"
 )
+
+const (
+	windowTitleCacheTTL = 10 * time.Second
+	commandTimeout      = 5 * time.Second
+)
+
+var (
+	cachedWindowTitles     map[int]string
+	cachedWindowTitlesErr  error
+	cachedWindowTitlesAt   time.Time
+	windowTitleCacheMu     sync.Mutex
+)
+
+// windowTitleFetcher is replaced in tests to verify caching behavior.
+var windowTitleFetcher = fetchWindowTitles
+
+func execCommand(name string, args ...string) ([]byte, error) {
+	ctx, cancel := context.WithTimeout(context.Background(), commandTimeout)
+	defer cancel()
+	return exec.CommandContext(ctx, name, args...).Output()
+}
 
 // DetectCompositor returns the current window compositor type.
 func DetectCompositor() string {
@@ -33,7 +57,23 @@ func DetectCompositor() string {
 
 // GetWindowTitles returns a map of PID -> window title for visible windows.
 // It tries multiple backends based on the detected compositor.
+// Results are cached for windowTitleCacheTTL to avoid excessive compositor IPC.
 func GetWindowTitles() (map[int]string, error) {
+	windowTitleCacheMu.Lock()
+	defer windowTitleCacheMu.Unlock()
+
+	if time.Since(cachedWindowTitlesAt) < windowTitleCacheTTL {
+		return cachedWindowTitles, cachedWindowTitlesErr
+	}
+
+	titles, err := windowTitleFetcher()
+	cachedWindowTitles = titles
+	cachedWindowTitlesErr = err
+	cachedWindowTitlesAt = time.Now()
+	return titles, err
+}
+
+func fetchWindowTitles() (map[int]string, error) {
 	compositor := DetectCompositor()
 
 	switch compositor {
@@ -75,7 +115,7 @@ type hyprWindow struct {
 }
 
 func getHyprlandWindows() (map[int]string, error) {
-	out, err := exec.Command("hyprctl", "clients", "-j").Output()
+	out, err := execCommand("hyprctl", "clients", "-j")
 	if err != nil {
 		return nil, err
 	}
@@ -113,7 +153,7 @@ type swayNode struct {
 }
 
 func getSwayWindows() (map[int]string, error) {
-	out, err := exec.Command("swaymsg", "-t", "get_tree").Output()
+	out, err := execCommand("swaymsg", "-t", "get_tree")
 	if err != nil {
 		return nil, err
 	}
@@ -145,8 +185,7 @@ func walkSwayTree(node *swayNode, out map[int]string) {
 // --- X11 ---
 
 func getX11Windows() (map[int]string, error) {
-	// Prefer wmctrl -l -p for simplicity
-	out, err := exec.Command("wmctrl", "-l", "-p").Output()
+	out, err := execCommand("wmctrl", "-l", "-p")
 	if err != nil {
 		// Fallback to xdotool + xprop
 		return getX11WindowsXdotool()
@@ -175,7 +214,7 @@ func getX11Windows() (map[int]string, error) {
 }
 
 func getX11WindowsXdotool() (map[int]string, error) {
-	out, err := exec.Command("xdotool", "search", "--onlyvisible", ".*").Output()
+	out, err := execCommand("xdotool", "search", "--onlyvisible", ".*")
 	if err != nil {
 		return nil, err
 	}
@@ -187,11 +226,11 @@ func getX11WindowsXdotool() (map[int]string, error) {
 		if wid == "" {
 			continue
 		}
-		titleOut, err := exec.Command("xdotool", "getwindowname", wid).Output()
+		titleOut, err := execCommand("xdotool", "getwindowname", wid)
 		if err != nil {
 			continue
 		}
-		pidOut, err := exec.Command("xdotool", "getwindowpid", wid).Output()
+		pidOut, err := execCommand("xdotool", "getwindowpid", wid)
 		if err != nil {
 			continue
 		}
@@ -207,8 +246,7 @@ func getX11WindowsXdotool() (map[int]string, error) {
 // --- KDE ---
 
 func getKDEWindows() (map[int]string, error) {
-	// Try kdotool first (KDE 6+)
-	out, err := exec.Command("kdotool", "search", ".*").Output()
+	out, err := execCommand("kdotool", "search", ".*")
 	if err != nil {
 		return getKDEDBusWindows()
 	}
@@ -220,11 +258,11 @@ func getKDEWindows() (map[int]string, error) {
 		if wid == "" {
 			continue
 		}
-		titleOut, err := exec.Command("kdotool", "getwindowtitle", wid).Output()
+		titleOut, err := execCommand("kdotool", "getwindowtitle", wid)
 		if err != nil {
 			continue
 		}
-		pidOut, err := exec.Command("kdotool", "getwindowpid", wid).Output()
+		pidOut, err := execCommand("kdotool", "getwindowpid", wid)
 		if err != nil {
 			continue
 		}
@@ -238,9 +276,7 @@ func getKDEWindows() (map[int]string, error) {
 }
 
 func getKDEDBusWindows() (map[int]string, error) {
-	// Query KWin's D-Bus interface for window list.
-	// Each window is exposed as /org/kde/KWin/Client/<id> with caption and pid properties.
-	out, err := exec.Command("qdbus", "org.kde.KWin", "/KWin", "org.kde.KWin.clientList").Output()
+	out, err := execCommand("qdbus", "org.kde.KWin", "/KWin", "org.kde.KWin.clientList")
 	if err != nil {
 		return nil, err
 	}
@@ -254,11 +290,11 @@ func getKDEDBusWindows() (map[int]string, error) {
 		}
 		winID := line
 
-		titleOut, err := exec.Command("qdbus", "org.kde.KWin", "/org/kde/KWin/Client/"+winID, "org.kde.KWin.Client.caption").Output()
+		titleOut, err := execCommand("qdbus", "org.kde.KWin", "/org/kde/KWin/Client/"+winID, "org.kde.KWin.Client.caption")
 		if err != nil {
 			continue
 		}
-		pidOut, err := exec.Command("qdbus", "org.kde.KWin", "/org/kde/KWin/Client/"+winID, "org.kde.KWin.Client.pid").Output()
+		pidOut, err := execCommand("qdbus", "org.kde.KWin", "/org/kde/KWin/Client/"+winID, "org.kde.KWin.Client.pid")
 		if err != nil {
 			continue
 		}

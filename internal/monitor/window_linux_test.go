@@ -2,7 +2,9 @@ package monitor
 
 import (
 	"encoding/json"
+	"sync"
 	"testing"
+	"time"
 )
 
 func TestGetHyprlandWindows(t *testing.T) {
@@ -102,5 +104,115 @@ func TestDetectCompositor(t *testing.T) {
 				t.Errorf("DetectCompositor() = %q, want %q", got, tt.want)
 			}
 		})
+	}
+}
+
+func TestWindowTitleCache(t *testing.T) {
+	callCount := 0
+	originalFetcher := windowTitleFetcher
+	windowTitleFetcher = func() (map[int]string, error) {
+		callCount++
+		return map[int]string{1234: "TestApp"}, nil
+	}
+	defer func() { windowTitleFetcher = originalFetcher }()
+
+	windowTitleCacheMu.Lock()
+	cachedWindowTitlesAt = time.Time{}
+	windowTitleCacheMu.Unlock()
+
+	titles, err := GetWindowTitles()
+	if err != nil {
+		t.Fatalf("GetWindowTitles() error: %v", err)
+	}
+	if titles[1234] != "TestApp" {
+		t.Fatalf("expected PID 1234 = TestApp, got %q", titles[1234])
+	}
+	if callCount != 1 {
+		t.Fatalf("expected 1 fetch call, got %d", callCount)
+	}
+
+	titles, err = GetWindowTitles()
+	if err != nil {
+		t.Fatalf("GetWindowTitles() error on second call: %v", err)
+	}
+	if titles[1234] != "TestApp" {
+		t.Fatalf("expected PID 1234 = TestApp on second call, got %q", titles[1234])
+	}
+	if callCount != 1 {
+		t.Fatalf("expected cache hit, but fetch was called %d times", callCount)
+	}
+}
+
+func TestWindowTitleCacheExpiry(t *testing.T) {
+	callCount := 0
+	originalFetcher := windowTitleFetcher
+	windowTitleFetcher = func() (map[int]string, error) {
+		callCount++
+		return map[int]string{callCount * 1000: "AppFromCall"}, nil
+	}
+	defer func() { windowTitleFetcher = originalFetcher }()
+
+	windowTitleCacheMu.Lock()
+	cachedWindowTitlesAt = time.Now().Add(-windowTitleCacheTTL - time.Second)
+	windowTitleCacheMu.Unlock()
+
+	titles, err := GetWindowTitles()
+	if err != nil {
+		t.Fatalf("GetWindowTitles() error: %v", err)
+	}
+	if callCount != 1 {
+		t.Fatalf("expected fresh fetch after TTL expiry, got %d calls", callCount)
+	}
+	_ = titles
+
+	titles2, err := GetWindowTitles()
+	if err != nil {
+		t.Fatalf("GetWindowTitles() error on second call: %v", err)
+	}
+	if callCount != 1 {
+		t.Fatalf("expected cache hit after fresh fetch, got %d calls", callCount)
+	}
+	_ = titles2
+}
+
+func TestWindowTitleCacheConcurrency(t *testing.T) {
+	callCount := 0
+	var mu sync.Mutex
+	originalFetcher := windowTitleFetcher
+	windowTitleFetcher = func() (map[int]string, error) {
+		mu.Lock()
+		callCount++
+		mu.Unlock()
+		time.Sleep(10 * time.Millisecond)
+		return map[int]string{1: "Concurrent"}, nil
+	}
+	defer func() { windowTitleFetcher = originalFetcher }()
+
+	windowTitleCacheMu.Lock()
+	cachedWindowTitlesAt = time.Time{}
+	windowTitleCacheMu.Unlock()
+
+	var wg sync.WaitGroup
+	const goroutines = 10
+	for i := 0; i < goroutines; i++ {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			titles, err := GetWindowTitles()
+			if err != nil {
+				t.Errorf("GetWindowTitles() error: %v", err)
+			}
+			if titles[1] != "Concurrent" {
+				t.Errorf("unexpected title: %v", titles)
+			}
+		}()
+	}
+	wg.Wait()
+
+	mu.Lock()
+	count := callCount
+	mu.Unlock()
+	if count != 1 {
+		t.Errorf("expected exactly 1 fetch from %d concurrent calls, got %d", goroutines, count)
 	}
 }
