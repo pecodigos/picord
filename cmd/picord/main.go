@@ -174,7 +174,19 @@ func (rm *rpcManager) close() {
 	}
 }
 
+type daemonOptions struct {
+	TrayOverride *bool
+}
+
+func boolPtr(v bool) *bool {
+	return &v
+}
+
 func runDaemon(debug bool) int {
+	return runDaemonWithOptions(debug, daemonOptions{})
+}
+
+func runDaemonWithOptions(debug bool, opts daemonOptions) int {
 	configDir := configDirPath()
 	configPath := filepath.Join(configDir, "picord", "config.yaml")
 
@@ -198,6 +210,11 @@ func runDaemon(debug bool) int {
 	if err != nil {
 		log.Printf("Error loading config: %v, using defaults", err)
 		cfg = defaultConfig()
+	}
+
+	showTray := cfg.ShowTrayIcon
+	if opts.TrayOverride != nil {
+		showTray = *opts.TrayOverride
 	}
 
 	appID := cfg.ResolveDiscordApp("main")
@@ -513,7 +530,7 @@ func runDaemon(debug bool) int {
 	sigCh := make(chan os.Signal, 1)
 	signal.Notify(sigCh, syscall.SIGINT, syscall.SIGTERM)
 
-	if cfg.ShowTrayIcon {
+	if showTray {
 		go func() {
 			<-sigCh
 			cleanup(rpcMgr, httpServer, configMgr, procMonitor, reconnectStopCh, catalogStore, catalogRefresher)
@@ -525,9 +542,6 @@ func runDaemon(debug bool) int {
 			OpenSettings: func() {
 				settingsDialog.UpdateConfig(configMgr.Config())
 				settingsDialog.Show()
-			},
-			OpenGUI: func() {
-				tray.OpenBrowser(fmt.Sprintf("http://127.0.0.1:%d", cfg.WebPort))
 			},
 			ReloadConfig: func() {
 				newCfg, err := config.Load(configPath)

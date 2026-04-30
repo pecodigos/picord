@@ -31,7 +31,7 @@ func runCLI(args []string, debug bool) int {
 
 	switch args[0] {
 	case "run":
-		return runDaemon(debug)
+		return cmdRun(args[1:], debug)
 	case "status":
 		return cmdStatus(args[1:])
 	case "diagnose":
@@ -62,11 +62,27 @@ func runCLI(args []string, debug bool) int {
 	}
 }
 
+func cmdRun(args []string, debug bool) int {
+	fs := flag.NewFlagSet("run", flag.ExitOnError)
+	trayEnabled := fs.Bool("tray", true, "Show icon in system tray")
+	noTray := fs.Bool("no-tray", false, "Run without the system tray icon")
+	fs.Parse(args)
+
+	if *noTray {
+		return runDaemonWithOptions(debug, daemonOptions{TrayOverride: boolPtr(false)})
+	}
+	if !*trayEnabled {
+		return runDaemonWithOptions(debug, daemonOptions{TrayOverride: boolPtr(false)})
+	}
+	return runDaemonWithOptions(debug, daemonOptions{TrayOverride: boolPtr(true)})
+}
+
 func printUsage() {
 	fmt.Print(`Usage: picord <command> [options]
 
 Commands:
   run              Run the daemon (default if no command given)
+                   Options: --tray / --no-tray
   status           Show current presence status
   diagnose         Test Discord Rich Presence connection
   profiles         List all profiles or create from catalog

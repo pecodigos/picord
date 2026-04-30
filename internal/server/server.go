@@ -1,10 +1,7 @@
 package server
 
 import (
-	"bytes"
-	"embed"
 	"encoding/json"
-	"io/fs"
 	"log"
 	"net/http"
 	"os"
@@ -17,9 +14,6 @@ import (
 	"github.com/pecodigos/picord/internal/config"
 	"github.com/pecodigos/picord/internal/profile"
 )
-
-//go:embed all:web
-var webAssets embed.FS
 
 type ScanMode string
 
@@ -218,25 +212,8 @@ func (srv *Server) SetSettingsProvider(fn func() config.AppConfig) {
 func (srv *Server) Handler() http.Handler {
 	mux := http.NewServeMux()
 
-	webFS, _ := fs.Sub(webAssets, "web")
-	fileServer := http.FileServer(http.FS(webFS))
-
-	// Serve index.html with token injected for the browser UI.
 	mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
-		if r.URL.Path != "/" && r.URL.Path != "/index.html" {
-			fileServer.ServeHTTP(w, r)
-			return
-		}
-		data, err := webAssets.ReadFile("web/index.html")
-		if err != nil {
-			http.Error(w, "not found", 404)
-			return
-		}
-		if srv.token != "" {
-			data = bytes.Replace(data, []byte("<head>"), []byte("<head>\n<meta name=\"picord-token\" content=\""+srv.token+"\">"), 1)
-		}
-		w.Header().Set("Content-Type", "text/html; charset=utf-8")
-		w.Write(data)
+		writeError(w, "Picord API: use /api/status or the picord CLI", http.StatusNotFound)
 	})
 
 	mux.HandleFunc("/api/status", srv.handleStatus)
@@ -842,7 +819,7 @@ func StartServer(addr string, srv *Server) *http.Server {
 		Handler: srv.Handler(),
 	}
 	go func() {
-		log.Printf("Web GUI: http://%s\n", addr)
+		log.Printf("Picord API: http://%s\n", addr)
 		if err := httpServer.ListenAndServe(); err != nil && err != http.ErrServerClosed {
 			log.Printf("HTTP server error: %v\n", err)
 		}

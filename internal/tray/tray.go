@@ -3,7 +3,6 @@ package tray
 import (
 	_ "embed"
 	"os"
-	"os/exec"
 
 	"github.com/energye/systray"
 
@@ -15,7 +14,6 @@ var iconData []byte
 
 type Actions struct {
 	OpenSettings  func()
-	OpenGUI       func()
 	ReloadConfig  func()
 	SetAutoDetect func(bool)
 	SetOverride   func(*profile.Profile)
@@ -80,11 +78,6 @@ func onReady(actions Actions, iconPath string) {
 		actions.OpenSettings()
 	})
 
-	guiItem := systray.AddMenuItem("Open Web GUI", "Open web interface")
-	guiItem.Click(func() {
-		actions.OpenGUI()
-	})
-
 	reloadItem := systray.AddMenuItem("Reload Config", "Reload configuration from disk")
 	reloadItem.Click(func() {
 		actions.ReloadConfig()
@@ -113,8 +106,4 @@ func SetAutoDetectState(enabled bool) {
 	} else {
 		autoDetectItem.Uncheck()
 	}
-}
-
-func OpenBrowser(url string) {
-	exec.Command("xdg-open", url).Start()
 }
