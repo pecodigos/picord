@@ -117,14 +117,7 @@ func (d *Dialog) buildGeneralTab() *gtk.Box {
 	trayBox.SetBorderWidth(8)
 	trayFrame.Add(trayBox)
 
-	trayCheck, _ := gtk.CheckButtonNewWithLabel("Show icon in system tray")
-	trayCheck.SetActive(d.cfg.ShowTrayIcon)
-	trayCheck.Connect("toggled", func() {
-		d.cfg.ShowTrayIcon = trayCheck.GetActive()
-	})
-	trayBox.PackStart(trayCheck, false, false, 0)
-
-	trayNote, _ := gtk.LabelNew("(requires restart to take effect)")
+	trayNote, _ := gtk.LabelNew("System tray icon is always shown. Headless mode: picord run --no-tray")
 	trayNote.SetXAlign(0)
 	trayNote.SetOpacity(0.6)
 	trayBox.PackStart(trayNote, false, false, 0)

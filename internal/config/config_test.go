@@ -240,6 +240,38 @@ func TestLoad_Validation(t *testing.T) {
 	}
 }
 
+func TestLoad_BackwardCompatShowTrayIcon(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "config.yaml")
+
+	if err := os.WriteFile(path, []byte("show_tray_icon: false\n"), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	cfg, err := Load(path)
+	if err != nil {
+		t.Fatalf("load failed: %v", err)
+	}
+
+	if cfg.ShowTrayIcon {
+		t.Error("expected show_tray_icon=false to be preserved from config")
+	}
+}
+
+func TestLoad_DefaultShowTrayIcon(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "config.yaml")
+
+	cfg, err := Load(path)
+	if err != nil {
+		t.Fatalf("load failed: %v", err)
+	}
+
+	if !cfg.ShowTrayIcon {
+		t.Error("expected default show_tray_icon to be true")
+	}
+}
+
 func TestLoad_InvalidYAML(t *testing.T) {
 	dir := t.TempDir()
 	path := filepath.Join(dir, "config.yaml")
