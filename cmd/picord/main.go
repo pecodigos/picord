@@ -285,7 +285,7 @@ func runDaemonWithOptions(debug bool, opts daemonOptions) int {
 	applyConfig := func(newCfg config.AppConfig, source string) {
 		// Restart-only fields: log a warning if they changed.
 		if newCfg.WebPort != cfg.WebPort {
-			log.Printf("[%s] web_port changed to %d (requires restart)", source, newCfg.WebPort)
+			log.Printf("[%s] api_port changed to %d (requires restart)", source, newCfg.WebPort)
 		}
 		if newCfg.PollInterval != cfg.PollInterval {
 			log.Printf("[%s] poll_interval changed to %d (requires restart)", source, newCfg.PollInterval)

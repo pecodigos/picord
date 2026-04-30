@@ -76,7 +76,7 @@ Edit `~/.config/picord/config.yaml`:
 ```yaml
 app_id: "1499058229571752148"     # Default Picord Discord application ID
 poll_interval: 2                     # Seconds between process scans
-web_port: 17970                      # Local API port for CLI/tray actions
+api_port: 17970                      # Local API port for CLI/tray actions
 scan_all_processes: true             # Detect ordinary apps/games, not just Discord IPC clients
 profiles: []                         # Your custom profiles (optional)
 ```
@@ -120,7 +120,7 @@ cp icons/picord_128.png ~/.local/share/icons/hicolor/128x128/apps/picord.png
 ```yaml
 app_id: "1499058229571752148"
 poll_interval: 2
-web_port: 17970                      # Local API port
+api_port: 17970                      # Local API port
 scan_all_processes: true
 catalog:
   enabled: true

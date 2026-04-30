@@ -272,6 +272,42 @@ func TestLoad_DefaultShowTrayIcon(t *testing.T) {
 	}
 }
 
+func TestLoad_BackwardCompatWebPort(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "config.yaml")
+
+	if err := os.WriteFile(path, []byte("web_port: 9999\n"), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	cfg, err := Load(path)
+	if err != nil {
+		t.Fatalf("load failed: %v", err)
+	}
+
+	if cfg.WebPort != 9999 {
+		t.Errorf("expected old web_port=9999 to be loaded, got %d", cfg.WebPort)
+	}
+}
+
+func TestLoad_APIPortTakesPrecedence(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "config.yaml")
+
+	if err := os.WriteFile(path, []byte("api_port: 8080\nweb_port: 9999\n"), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	cfg, err := Load(path)
+	if err != nil {
+		t.Fatalf("load failed: %v", err)
+	}
+
+	if cfg.WebPort != 8080 {
+		t.Errorf("expected api_port=8080 to take precedence, got %d", cfg.WebPort)
+	}
+}
+
 func TestLoad_InvalidYAML(t *testing.T) {
 	dir := t.TempDir()
 	path := filepath.Join(dir, "config.yaml")

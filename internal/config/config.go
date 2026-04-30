@@ -41,7 +41,7 @@ type DiscordApp struct {
 type AppConfig struct {
 	AppID            string                `yaml:"app_id" json:"app_id"`
 	PollInterval     int                   `yaml:"poll_interval" json:"poll_interval"`
-	WebPort          int                   `yaml:"web_port" json:"web_port"`
+	WebPort          int                   `yaml:"api_port" json:"api_port"`
 	ScanAllProcesses bool                  `yaml:"scan_all_processes" json:"scan_all_processes"`
 	ShowTrayIcon     bool                  `yaml:"show_tray_icon" json:"show_tray_icon"`
 	TrayIconPath     string                `yaml:"tray_icon_path,omitempty" json:"tray_icon_path,omitempty"`
@@ -141,6 +141,18 @@ func Load(path string) (AppConfig, error) {
 
 	if err := yaml.Unmarshal(data, &cfg); err != nil {
 		return cfg, fmt.Errorf("parse config: %w", err)
+	}
+
+	// Backward compatibility: map old web_port key to new api_port field.
+	if _, hasAPIPort := raw["api_port"]; !hasAPIPort {
+		if rawWebPort, ok := raw["web_port"]; ok {
+			switch v := rawWebPort.(type) {
+			case int:
+				cfg.WebPort = v
+			case float64:
+				cfg.WebPort = int(v)
+			}
+		}
 	}
 
 	if cfg.PollInterval < 1 {
