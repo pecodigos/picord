@@ -174,6 +174,29 @@ func TestHandleCatalogRefresh(t *testing.T) {
 	}
 }
 
+func TestHandleCatalogRefreshAcceptsSteamShortcuts(t *testing.T) {
+	dir := t.TempDir()
+	store, err := catalog.Open(filepath.Join(dir, "catalog.db"))
+	if err != nil {
+		t.Fatalf("Open failed: %v", err)
+	}
+	defer store.Close()
+
+	srv := New(NewAppState(), profile.NewManager(nil, nil), store)
+	body, _ := json.Marshal(map[string]any{
+		"source": "steam_shortcuts",
+		"roots":  []string{filepath.Join(dir, "missing-shortcuts.vdf")},
+	})
+	req := httptest.NewRequest(http.MethodPost, "/api/catalog/refresh", bytes.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	rr := httptest.NewRecorder()
+	srv.handleCatalogRefresh(rr, req)
+
+	if rr.Code != 200 {
+		t.Fatalf("expected steam_shortcuts refresh to be accepted, got %d: %s", rr.Code, rr.Body.String())
+	}
+}
+
 func TestHandleCatalogProfileFromEntry(t *testing.T) {
 	dir := t.TempDir()
 	store, err := catalog.Open(filepath.Join(dir, "catalog.db"))

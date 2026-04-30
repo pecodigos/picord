@@ -439,7 +439,7 @@ func cmdCatalogSearch(query string) int {
 
 func cmdCatalogRefresh(args []string) int {
 	fs := flag.NewFlagSet("refresh", flag.ExitOnError)
-	source := fs.String("source", "", "Source to refresh (steam_local, lutris_public, desktop)")
+	source := fs.String("source", "", "Source to refresh (steam_local, steam_shortcuts, lutris_public, desktop)")
 	maxPages := fs.Int("max-pages", 0, "Max pages to fetch (for paginated sources)")
 	fs.Parse(args)
 

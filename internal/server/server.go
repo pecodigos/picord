@@ -494,6 +494,8 @@ func (srv *Server) handleCatalogRefresh(w http.ResponseWriter, r *http.Request) 
 	switch req.Source {
 	case "steam_local":
 		src = &catalog.SteamLocalSource{SteamPaths: req.Roots}
+	case "steam_shortcuts":
+		src = &catalog.SteamShortcutsSource{Paths: req.Roots}
 	case "lutris_public":
 		src = &catalog.LutrisPublicSource{}
 	case "desktop":
