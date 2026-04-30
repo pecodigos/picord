@@ -11,6 +11,7 @@ import (
 	"os"
 	"os/signal"
 	"path/filepath"
+	"strings"
 	"text/tabwriter"
 
 	"github.com/pecodigos/picord/internal/config"
@@ -62,6 +63,7 @@ Commands:
   clear            Clear manual override
   reload           Reload configuration from disk
   catalog          Catalog management (status, search, refresh)
+  debug-rpc-image  Test a Discord Rich Presence image
   help             Show this help message
 
 Override options:
@@ -188,15 +190,15 @@ func cmdStatus() int {
 		fmt.Fprintln(w, "PID\tNAME\tWINDOW TITLE")
 		for _, p := range procs {
 			if m, ok := p.(map[string]any); ok {
-			pid, _ := m["pid"].(float64)
-			if pid == 0 {
-				pid, _ = m["PID"].(float64)
-			}
-			name, _ := m["name"].(string)
-			if name == "" {
-				name, _ = m["Name"].(string)
-			}
-			title, _ := m["window_title"].(string)
+				pid, _ := m["pid"].(float64)
+				if pid == 0 {
+					pid, _ = m["PID"].(float64)
+				}
+				name, _ := m["name"].(string)
+				if name == "" {
+					name, _ = m["Name"].(string)
+				}
+				title, _ := m["window_title"].(string)
 				if title == "" {
 					title = "-"
 				}
@@ -222,13 +224,21 @@ func cmdOverride(args []string) int {
 	fs.Parse(args)
 
 	name := *nameShort
-	if name == "" { name = *nameLong }
+	if name == "" {
+		name = *nameLong
+	}
 	details := *detailsShort
-	if details == "" { details = *detailsLong }
+	if details == "" {
+		details = *detailsLong
+	}
 	state := *stateShort
-	if state == "" { state = *stateLong }
+	if state == "" {
+		state = *stateLong
+	}
 	image := *imageShort
-	if image == "" { image = *imageLong }
+	if image == "" {
+		image = *imageLong
+	}
 
 	if name == "" {
 		fmt.Fprintln(os.Stderr, "Error: name is required")
@@ -277,15 +287,25 @@ func cmdDebugRPCImage(args []string) int {
 	fs := flag.NewFlagSet("debug-rpc-image", flag.ExitOnError)
 	assetKey := fs.String("asset-key", "", "Discord asset key to test")
 	externalURL := fs.String("external-url", "", "External image URL to test")
-	appID := fs.String("app-id", "", "Discord application client ID")
+	appIDFlag := fs.String("app-id", "", "Discord application client ID")
 	fs.Parse(args)
 
-	if *appID == "" {
-		fmt.Fprintln(os.Stderr, "Error: --app-id is required")
+	if *externalURL == "" && *assetKey == "" {
+		fmt.Fprintln(os.Stderr, "Error: either --asset-key or --external-url is required")
 		return 1
 	}
 
-	client, err := rpc.NewClient(*appID)
+	appID := strings.TrimSpace(*appIDFlag)
+	if appID == "" {
+		if cfg, err := config.Load(filepath.Join(configDirPath(), "picord", "config.yaml")); err == nil {
+			appID = cfg.ResolveDiscordApp("main")
+		}
+	}
+	if appID == "" {
+		appID = config.DefaultDiscordAppID
+	}
+
+	client, err := rpc.NewClient(appID)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "Cannot connect to Discord: %v\n", err)
 		return 1
@@ -297,6 +317,7 @@ func cmdDebugRPCImage(args []string) int {
 		State:    "Testing image display",
 		Instance: false,
 	}
+	fmt.Printf("Using Discord app ID: %s\n", appID)
 
 	if *externalURL != "" {
 		act.Assets = &rpc.RichAssets{

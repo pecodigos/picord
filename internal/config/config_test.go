@@ -63,8 +63,11 @@ func TestLoad_DefaultsOnMissingFile(t *testing.T) {
 	if cfg.WebPort != 17970 {
 		t.Errorf("expected default web_port 17970, got %d", cfg.WebPort)
 	}
-	if cfg.AppID != "" {
-		t.Errorf("expected empty app_id, got %q", cfg.AppID)
+	if cfg.AppID != DefaultDiscordAppID {
+		t.Errorf("expected default app_id %q, got %q", DefaultDiscordAppID, cfg.AppID)
+	}
+	if cfg.ResolveDiscordApp("main") != DefaultDiscordAppID {
+		t.Errorf("expected main Discord app %q, got %q", DefaultDiscordAppID, cfg.ResolveDiscordApp("main"))
 	}
 	if !cfg.ScanAllProcesses {
 		t.Error("expected default scan_all_processes to be true")
@@ -80,6 +83,46 @@ func TestLoad_DefaultsOnMissingFile(t *testing.T) {
 	}
 	if cfg.Images.GenericAssetKey != "picord" {
 		t.Errorf("expected default images.generic_asset_key picord, got %q", cfg.Images.GenericAssetKey)
+	}
+}
+
+func TestLoad_EmptyAppIDUsesPicordDefault(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "config.yaml")
+
+	if err := os.WriteFile(path, []byte("app_id: \"\"\n"), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	cfg, err := Load(path)
+	if err != nil {
+		t.Fatalf("load failed: %v", err)
+	}
+
+	if cfg.AppID != DefaultDiscordAppID {
+		t.Errorf("expected empty app_id to use Picord default %q, got %q", DefaultDiscordAppID, cfg.AppID)
+	}
+	if cfg.ResolveDiscordApp("main") != DefaultDiscordAppID {
+		t.Errorf("expected main Discord app %q, got %q", DefaultDiscordAppID, cfg.ResolveDiscordApp("main"))
+	}
+}
+
+func TestLoad_DiscordAppsMainBackfillsLegacyAppID(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "config.yaml")
+
+	data := []byte("discord_apps:\n  main:\n    id: custom-main\n    name: Custom\n")
+	if err := os.WriteFile(path, data, 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	cfg, err := Load(path)
+	if err != nil {
+		t.Fatalf("load failed: %v", err)
+	}
+
+	if cfg.AppID != "custom-main" {
+		t.Errorf("expected app_id backfilled from discord_apps.main, got %q", cfg.AppID)
 	}
 }
 

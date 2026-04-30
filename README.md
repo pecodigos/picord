@@ -52,19 +52,29 @@ chmod +x dist/picord-*.AppImage
 
 ## Quick Start
 
-### 1. Create a Discord Application
+### 1. Start Picord
+
+Picord ships with the public Discord application ID for the Picord app:
+
+```yaml
+app_id: "1499058229571752148"
+```
+
+That means a fresh install can connect to Discord immediately. If you want a private Discord application instead, create one in the Discord Developer Portal and replace `app_id` in `~/.config/picord/config.yaml`.
+
+Optional private app steps:
 
 1. Go to [discord.com/developers/applications](https://discord.com/developers/applications)
-2. Click **New Application** → name it (e.g., "Picord")
+2. Click **New Application** → name it
 3. Go to **OAuth2** → copy the **Client ID**
-4. (Optional) Under **Rich Presence → Art Assets**, upload images for your games (the image keys in profiles reference these)
+4. Replace `app_id` in Picord's config
 
 ### 2. Configure
 
 Edit `~/.config/picord/config.yaml`:
 
 ```yaml
-app_id: "YOUR_DISCORD_CLIENT_ID"   # Required - your Discord application ID
+app_id: "1499058229571752148"     # Default Picord Discord application ID
 poll_interval: 2                     # Seconds between process scans
 web_port: 17970                      # Web GUI port
 scan_all_processes: true             # Detect ordinary apps/games, not just Discord IPC clients
@@ -108,7 +118,7 @@ cp icons/picord_128.png ~/.local/share/icons/hicolor/128x128/apps/picord.png
 ### Full config with custom profiles
 
 ```yaml
-app_id: "123456789012345678"
+app_id: "1499058229571752148"
 poll_interval: 2
 web_port: 17970
 scan_all_processes: true
@@ -162,7 +172,7 @@ Picord distinguishes between **catalog images** (for the UI and metadata) and **
 
 1. Test an external URL against your live Discord client:
    ```bash
-   picord debug-rpc-image --app-id <YOUR_APP_ID> --external-url https://cdn.akamai.steamstatic.com/steam/apps/620/header.jpg
+   picord debug-rpc-image --external-url https://cdn.akamai.steamstatic.com/steam/apps/620/header.jpg
    ```
 2. If the image appears in Discord, set in your config:
    ```yaml

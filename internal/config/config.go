@@ -43,10 +43,12 @@ type AppConfig struct {
 	DiscordApps      map[string]DiscordApp `yaml:"discord_apps,omitempty" json:"discord_apps,omitempty"`
 }
 
+const DefaultDiscordAppID = "1499058229571752148"
+
 var DefaultCatalogSources = []string{"steam_local", "steam_shortcuts", "desktop"}
 
 var defaultConfig = AppConfig{
-	AppID:            "",
+	AppID:            DefaultDiscordAppID,
 	PollInterval:     2,
 	WebPort:          17970,
 	ScanAllProcesses: true,
@@ -64,7 +66,27 @@ var defaultConfig = AppConfig{
 		GenericAssetKey:   "picord",
 		ExternalValidated: true,
 	},
-	DiscordApps: map[string]DiscordApp{},
+	DiscordApps: map[string]DiscordApp{
+		"main": {ID: DefaultDiscordAppID, Name: "Picord"},
+	},
+}
+
+func defaultConfigCopy() AppConfig {
+	cfg := defaultConfig
+	cfg.Catalog.Sources = append([]string(nil), defaultConfig.Catalog.Sources...)
+	cfg.DiscordApps = make(map[string]DiscordApp, len(defaultConfig.DiscordApps))
+	for key, app := range defaultConfig.DiscordApps {
+		cfg.DiscordApps[key] = app
+	}
+	return cfg
+}
+
+func defaultConfigForUnmarshal() AppConfig {
+	cfg := defaultConfigCopy()
+	// yaml.v3 merges into existing maps. Keep this nil so user config replaces
+	// discord_apps instead of inheriting the built-in main app entry.
+	cfg.DiscordApps = nil
+	return cfg
 }
 
 type Manager struct {
@@ -76,10 +98,11 @@ type Manager struct {
 }
 
 func Load(path string) (AppConfig, error) {
-	cfg := defaultConfig
+	cfg := defaultConfigForUnmarshal()
 
 	data, err := os.ReadFile(path)
 	if err != nil {
+		cfg = defaultConfigCopy()
 		if os.IsNotExist(err) {
 			if err := os.MkdirAll(filepath.Dir(path), 0755); err != nil {
 				return cfg, fmt.Errorf("create config dir: %w", err)
@@ -92,6 +115,12 @@ func Load(path string) (AppConfig, error) {
 		return cfg, fmt.Errorf("read config: %w", err)
 	}
 
+	var raw map[string]any
+	if err := yaml.Unmarshal(data, &raw); err != nil {
+		return cfg, fmt.Errorf("parse config: %w", err)
+	}
+	_, hasAppID := raw["app_id"]
+
 	if err := yaml.Unmarshal(data, &cfg); err != nil {
 		return cfg, fmt.Errorf("parse config: %w", err)
 	}
@@ -103,11 +132,31 @@ func Load(path string) (AppConfig, error) {
 		cfg.WebPort = 17970
 	}
 
-	// Backward compatibility: if discord_apps is empty but legacy app_id is set,
-	// create a "main" entry so the new multi-app logic works uniformly.
+	// Fresh installs and old generated configs should be ready to run with the
+	// public Picord Discord application. A user-provided app_id still wins.
+	if !hasAppID && len(cfg.DiscordApps) > 0 {
+		if app, ok := cfg.DiscordApps["main"]; ok && app.ID != "" {
+			cfg.AppID = app.ID
+		}
+	}
+	if cfg.AppID == "" {
+		if app, ok := cfg.DiscordApps["main"]; ok && app.ID != "" {
+			cfg.AppID = app.ID
+		} else {
+			cfg.AppID = DefaultDiscordAppID
+		}
+	}
+
+	// Backward compatibility: if discord_apps is empty but app_id is set,
+	// create a "main" entry so the multi-app logic works uniformly.
 	if len(cfg.DiscordApps) == 0 && cfg.AppID != "" {
 		cfg.DiscordApps = map[string]DiscordApp{
 			"main": {ID: cfg.AppID, Name: "Picord"},
+		}
+	}
+	if cfg.AppID == "" {
+		if app, ok := cfg.DiscordApps["main"]; ok {
+			cfg.AppID = app.ID
 		}
 	}
 

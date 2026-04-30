@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/pecodigos/picord/internal/catalog"
+	"github.com/pecodigos/picord/internal/config"
 	"github.com/pecodigos/picord/internal/profile"
 	"github.com/pecodigos/picord/internal/rpc"
 )
@@ -224,6 +225,14 @@ func TestRPCManager_RetriesAfterInitialFailureWithMockSocket(t *testing.T) {
 	}
 
 	rm.close()
+}
+
+func TestDefaultConfigUsesPicordDiscordApp(t *testing.T) {
+	cfg := defaultConfig()
+
+	if cfg.ResolveDiscordApp("main") != config.DefaultDiscordAppID {
+		t.Fatalf("defaultConfig main app = %q, want %q", cfg.ResolveDiscordApp("main"), config.DefaultDiscordAppID)
+	}
 }
 
 func TestRPCManager_ReplaysDesiredActivityOnReconnect(t *testing.T) {

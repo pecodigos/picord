@@ -153,7 +153,7 @@ func runDaemon(debug bool) int {
 		cfg = defaultConfig()
 	}
 
-	rpcMgr := newRPCManager(cfg.AppID)
+	rpcMgr := newRPCManager(cfg.ResolveDiscordApp("main"))
 	if err := rpcMgr.connect(); err != nil {
 		log.Printf("Warning: Cannot connect to Discord: %v", err)
 		log.Println("Picord will run but Rich Presence won't work until Discord is available.")
@@ -214,7 +214,7 @@ func runDaemon(debug bool) int {
 		if newCfg.PollInterval != cfg.PollInterval {
 			log.Printf("[%s] poll_interval changed to %d (requires restart)", source, newCfg.PollInterval)
 		}
-		if newCfg.AppID != cfg.AppID {
+		if newCfg.ResolveDiscordApp("main") != cfg.ResolveDiscordApp("main") {
 			log.Printf("[%s] app_id changed (requires restart)", source)
 		}
 		if newCfg.ScanAllProcesses != cfg.ScanAllProcesses {
@@ -415,7 +415,7 @@ func configDirPath() string {
 
 func defaultConfig() config.AppConfig {
 	return config.AppConfig{
-		AppID:            "",
+		AppID:            config.DefaultDiscordAppID,
 		PollInterval:     2,
 		WebPort:          17970,
 		ScanAllProcesses: true,
@@ -431,6 +431,9 @@ func defaultConfig() config.AppConfig {
 			MaxCacheMB:        512,
 			GenericAssetKey:   "picord",
 			ExternalValidated: true,
+		},
+		DiscordApps: map[string]config.DiscordApp{
+			"main": {ID: config.DefaultDiscordAppID, Name: "Picord"},
 		},
 	}
 }
