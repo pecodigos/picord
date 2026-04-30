@@ -20,24 +20,30 @@ type CatalogConfig struct {
 }
 
 type ImageConfig struct {
-	Mode             string `yaml:"mode" json:"mode"`
-	CacheEnabled     bool   `yaml:"cache_enabled" json:"cache_enabled"`
-	MaxCacheMB       int    `yaml:"max_cache_mb" json:"max_cache_mb"`
-	GenericAssetKey  string `yaml:"generic_asset_key" json:"generic_asset_key"`
-	ExternalValidated bool  `yaml:"external_validated" json:"external_validated"`
+	Mode              string `yaml:"mode" json:"mode"`
+	CacheEnabled      bool   `yaml:"cache_enabled" json:"cache_enabled"`
+	MaxCacheMB        int    `yaml:"max_cache_mb" json:"max_cache_mb"`
+	GenericAssetKey   string `yaml:"generic_asset_key" json:"generic_asset_key"`
+	ExternalValidated bool   `yaml:"external_validated" json:"external_validated"`
+}
+
+type DiscordApp struct {
+	ID   string `yaml:"id" json:"id"`
+	Name string `yaml:"name" json:"name"`
 }
 
 type AppConfig struct {
-	AppID            string            `yaml:"app_id" json:"app_id"`
-	PollInterval     int               `yaml:"poll_interval" json:"poll_interval"`
-	WebPort          int               `yaml:"web_port" json:"web_port"`
-	ScanAllProcesses bool              `yaml:"scan_all_processes" json:"scan_all_processes"`
-	Profiles         []profile.Profile `yaml:"profiles" json:"profiles"`
-	Catalog          CatalogConfig     `yaml:"catalog" json:"catalog"`
-	Images           ImageConfig       `yaml:"images" json:"images"`
+	AppID            string                `yaml:"app_id" json:"app_id"`
+	PollInterval     int                   `yaml:"poll_interval" json:"poll_interval"`
+	WebPort          int                   `yaml:"web_port" json:"web_port"`
+	ScanAllProcesses bool                  `yaml:"scan_all_processes" json:"scan_all_processes"`
+	Profiles         []profile.Profile     `yaml:"profiles" json:"profiles"`
+	Catalog          CatalogConfig         `yaml:"catalog" json:"catalog"`
+	Images           ImageConfig           `yaml:"images" json:"images"`
+	DiscordApps      map[string]DiscordApp `yaml:"discord_apps,omitempty" json:"discord_apps,omitempty"`
 }
 
-var DefaultCatalogSources = []string{"steam_local", "desktop"}
+var DefaultCatalogSources = []string{"steam_local", "steam_shortcuts", "desktop"}
 
 var defaultConfig = AppConfig{
 	AppID:            "",
@@ -52,12 +58,13 @@ var defaultConfig = AppConfig{
 		RefreshHours: 24,
 	},
 	Images: ImageConfig{
-		Mode:              "generic",
+		Mode:              "external_url",
 		CacheEnabled:      true,
 		MaxCacheMB:        512,
-		GenericAssetKey:   "picord_game",
-		ExternalValidated: false,
+		GenericAssetKey:   "picord",
+		ExternalValidated: true,
 	},
+	DiscordApps: map[string]DiscordApp{},
 }
 
 type Manager struct {
@@ -96,7 +103,31 @@ func Load(path string) (AppConfig, error) {
 		cfg.WebPort = 17970
 	}
 
+	// Backward compatibility: if discord_apps is empty but legacy app_id is set,
+	// create a "main" entry so the new multi-app logic works uniformly.
+	if len(cfg.DiscordApps) == 0 && cfg.AppID != "" {
+		cfg.DiscordApps = map[string]DiscordApp{
+			"main": {ID: cfg.AppID, Name: "Picord"},
+		}
+	}
+
 	return cfg, nil
+}
+
+// ResolveDiscordApp returns the Discord app ID for the given app key.
+// If the key is empty, it falls back to "main". If no mapping exists,
+// it falls back to the legacy AppID field, or empty string.
+func (cfg AppConfig) ResolveDiscordApp(key string) string {
+	if key == "" {
+		key = "main"
+	}
+	if app, ok := cfg.DiscordApps[key]; ok {
+		return app.ID
+	}
+	if key == "main" {
+		return cfg.AppID
+	}
+	return ""
 }
 
 func Save(path string, cfg AppConfig) error {

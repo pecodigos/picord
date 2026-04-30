@@ -8,11 +8,12 @@ import (
 // values from the detected process.
 //
 // Supported variables:
-//   {process_name}  - the detected process name
-//   {window_title}  - the detected window title
-//   {title}         - canonical game/app title (catalog or profile)
-//   {source}        - catalog source (e.g., steam, lutris, desktop)
-//   {steam_app_id}  - Steam AppID if detected
+//
+//	{process_name}  - the detected process name
+//	{window_title}  - the detected window title
+//	{title}         - canonical game/app title (catalog or profile)
+//	{source}        - catalog source (e.g., steam, lutris, desktop)
+//	{steam_app_id}  - Steam AppID if detected
 func RenderActivity(act Activity, proc DetectedProcess) Activity {
 	replacer := strings.NewReplacer(
 		"{process_name}", proc.Name,

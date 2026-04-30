@@ -119,5 +119,3 @@ func parseACFStringField(data []byte, key string) (string, error) {
 	}
 	return s[pos : pos+end], nil
 }
-
-

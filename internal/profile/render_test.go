@@ -55,8 +55,8 @@ func TestRenderActivity_WindowTitle(t *testing.T) {
 
 func TestRenderActivity_Mixed(t *testing.T) {
 	act := Activity{
-		Details:    "{process_name}: {window_title}",
-		LargeText:  "Playing {window_title}",
+		Details:   "{process_name}: {window_title}",
+		LargeText: "Playing {window_title}",
 	}
 	proc := DetectedProcess{Name: "steam", WindowTitle: "Half-Life 3"}
 

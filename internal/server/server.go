@@ -7,6 +7,8 @@ import (
 	"io/fs"
 	"log"
 	"net/http"
+	"os"
+	"path/filepath"
 	"strings"
 	"sync"
 
@@ -169,7 +171,30 @@ func (srv *Server) Handler() http.Handler {
 	mux.HandleFunc("/api/catalog/refresh", srv.handleCatalogRefresh)
 	mux.HandleFunc("/api/catalog/profiles/from-entry/", srv.handleCatalogProfileFromEntry)
 
+	// Serve local assets (game images, etc.) from the filesystem.
+	assetsDir := AssetsDir()
+	if _, err := os.Stat(assetsDir); err == nil {
+		mux.Handle("/assets/", http.StripPrefix("/assets/", http.FileServer(http.Dir(assetsDir))))
+	}
+
 	return withSecurity(srv.token, mux)
+}
+
+// AssetsDir returns the directory for local image assets.
+func AssetsDir() string {
+	if exe, err := os.Executable(); err == nil {
+		dir := filepath.Join(filepath.Dir(exe), "assets")
+		if _, err := os.Stat(dir); err == nil {
+			return dir
+		}
+	}
+	if wd, err := os.Getwd(); err == nil {
+		dir := filepath.Join(wd, "assets")
+		if _, err := os.Stat(dir); err == nil {
+			return dir
+		}
+	}
+	return "assets"
 }
 
 func (srv *Server) handleStatus(w http.ResponseWriter, r *http.Request) {
@@ -364,9 +389,9 @@ func (srv *Server) handleCatalogStatus(w http.ResponseWriter, r *http.Request) {
 	entryCount, _ := srv.catalogStore.CountEntries(ctx)
 	aliasCount, _ := srv.catalogStore.CountAliases(ctx)
 	writeJSON(w, map[string]any{
-		"enabled":       true,
-		"entry_count":   entryCount,
-		"alias_count":   aliasCount,
+		"enabled":     true,
+		"entry_count": entryCount,
+		"alias_count": aliasCount,
 	})
 }
 

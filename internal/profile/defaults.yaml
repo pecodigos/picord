@@ -1,4 +1,17 @@
 # === GAMES (enabled by default) ===
+
+- name: "War Thunder"
+  match:
+    type: process_name
+    value: "aces"
+  activity:
+    details: "War Thunder"
+    state: "In battle"
+    large_image: "https://cdn.akamai.steamstatic.com/steam/apps/236390/library_600x900.jpg"
+    large_text: "War Thunder"
+  priority: 10
+  enabled: true
+
 - name: "Factorio"
   match:
     type: process_name
@@ -6,7 +19,7 @@
   activity:
     details: "The factory must grow"
     state: "Factorio"
-    large_image: "picord_game"
+    large_image: "https://cdn.akamai.steamstatic.com/steam/apps/427520/library_600x900.jpg"
     large_text: "Factorio"
   priority: 10
   enabled: true
@@ -18,7 +31,7 @@
   activity:
     details: "Losing is fun"
     state: "Dwarf Fortress"
-    large_image: "picord_game"
+    large_image: "https://cdn.akamai.steamstatic.com/steam/apps/975370/library_600x900.jpg"
     large_text: "Dwarf Fortress"
   priority: 10
   enabled: true
@@ -30,7 +43,7 @@
   activity:
     details: "Farming and friendship"
     state: "Stardew Valley"
-    large_image: "picord_game"
+    large_image: "https://cdn.akamai.steamstatic.com/steam/apps/413150/library_600x900.jpg"
     large_text: "Stardew Valley"
   priority: 10
   enabled: true
@@ -42,7 +55,7 @@
   activity:
     details: "Digging and building"
     state: "Terraria"
-    large_image: "picord_game"
+    large_image: "https://cdn.akamai.steamstatic.com/steam/apps/105600/library_600x900.jpg"
     large_text: "Terraria"
   priority: 10
   enabled: true
@@ -54,7 +67,7 @@
   activity:
     details: "Climbing the mountain"
     state: "Celeste"
-    large_image: "picord_game"
+    large_image: "https://cdn.akamai.steamstatic.com/steam/apps/504230/library_600x900.jpg"
     large_text: "Celeste"
   priority: 10
   enabled: true
@@ -66,7 +79,7 @@
   activity:
     details: "Exploring Hallownest"
     state: "Hollow Knight"
-    large_image: "picord_game"
+    large_image: "https://cdn.akamai.steamstatic.com/steam/apps/367520/library_600x900.jpg"
     large_text: "Hollow Knight"
   priority: 10
   enabled: true
@@ -78,7 +91,7 @@
   activity:
     details: "Die, learn, repeat"
     state: "Dead Cells"
-    large_image: "picord_game"
+    large_image: "https://cdn.akamai.steamstatic.com/steam/apps/588650/library_600x900.jpg"
     large_text: "Dead Cells"
   priority: 10
   enabled: true
@@ -90,7 +103,7 @@
   activity:
     details: "Playing Minecraft"
     state: "In game"
-    large_image: "picord_game"
+    large_image: "picord"
     large_text: "Minecraft"
   priority: 7
   enabled: true
@@ -102,7 +115,7 @@
   activity:
     details: "Playing Old School RuneScape"
     state: "RuneLite"
-    large_image: "picord_game"
+    large_image: "picord"
     large_text: "RuneLite"
   priority: 10
   enabled: true
@@ -114,7 +127,7 @@
   activity:
     details: "Clicking circles"
     state: "osu!"
-    large_image: "picord_game"
+    large_image: "https://cdn.akamai.steamstatic.com/steam/apps/2916560/library_600x900.jpg"
     large_text: "osu!"
   priority: 10
   enabled: true
@@ -127,7 +140,7 @@
   activity:
     details: "Playing retro games"
     state: "RetroArch"
-    large_image: "picord_emulator"
+    large_image: "picord"
     large_text: "RetroArch"
   priority: 10
   enabled: true
@@ -139,7 +152,7 @@
   activity:
     details: "Playing GameCube / Wii"
     state: "Dolphin Emulator"
-    large_image: "picord_emulator"
+    large_image: "picord"
     large_text: "Dolphin"
   priority: 10
   enabled: true
@@ -151,7 +164,7 @@
   activity:
     details: "Playing PlayStation 2"
     state: "PCSX2"
-    large_image: "picord_emulator"
+    large_image: "picord"
     large_text: "PCSX2"
   priority: 10
   enabled: true
@@ -163,7 +176,7 @@
   activity:
     details: "Playing PlayStation 3"
     state: "RPCS3"
-    large_image: "picord_emulator"
+    large_image: "picord"
     large_text: "RPCS3"
   priority: 10
   enabled: true
@@ -175,7 +188,7 @@
   activity:
     details: "Playing PlayStation 1"
     state: "DuckStation"
-    large_image: "picord_emulator"
+    large_image: "picord"
     large_text: "DuckStation"
   priority: 10
   enabled: true
@@ -187,7 +200,7 @@
   activity:
     details: "Playing PSP games"
     state: "PPSSPP"
-    large_image: "picord_emulator"
+    large_image: "picord"
     large_text: "PPSSPP"
   priority: 10
   enabled: true
@@ -199,7 +212,7 @@
   activity:
     details: "Playing Nintendo Switch"
     state: "Yuzu"
-    large_image: "picord_emulator"
+    large_image: "picord"
     large_text: "Yuzu"
   priority: 10
   enabled: true
@@ -211,7 +224,7 @@
   activity:
     details: "Playing Nintendo 3DS"
     state: "Citra"
-    large_image: "picord_emulator"
+    large_image: "picord"
     large_text: "Citra"
   priority: 10
   enabled: true
@@ -223,7 +236,7 @@
   activity:
     details: "Playing Wii U"
     state: "Cemu"
-    large_image: "picord_emulator"
+    large_image: "picord"
     large_text: "Cemu"
   priority: 10
   enabled: true
@@ -235,7 +248,7 @@
   activity:
     details: "Playing arcade games"
     state: "MAME"
-    large_image: "picord_emulator"
+    large_image: "picord"
     large_text: "MAME"
   priority: 10
   enabled: true
@@ -247,7 +260,7 @@
   activity:
     details: "Playing Original Xbox"
     state: "Xemu"
-    large_image: "picord_emulator"
+    large_image: "picord"
     large_text: "Xemu"
   priority: 10
   enabled: true
@@ -259,7 +272,7 @@
   activity:
     details: "Playing Dreamcast"
     state: "Flycast"
-    large_image: "picord_emulator"
+    large_image: "picord"
     large_text: "Flycast"
   priority: 10
   enabled: true
@@ -272,7 +285,7 @@
   activity:
     details: "Ripping and tearing"
     state: "GZDoom"
-    large_image: "picord_game"
+    large_image: "picord"
     large_text: "GZDoom"
   priority: 10
   enabled: true
@@ -284,7 +297,7 @@
   activity:
     details: "Exploring Morrowind"
     state: "OpenMW"
-    large_image: "picord_game"
+    large_image: "picord"
     large_text: "OpenMW"
   priority: 10
   enabled: true
@@ -296,7 +309,7 @@
   activity:
     details: "Command & Conquer"
     state: "OpenRA"
-    large_image: "picord_game"
+    large_image: "picord"
     large_text: "OpenRA"
   priority: 10
   enabled: true
@@ -308,7 +321,7 @@
   activity:
     details: "Building transport empires"
     state: "OpenTTD"
-    large_image: "picord_game"
+    large_image: "picord"
     large_text: "OpenTTD"
   priority: 10
   enabled: true
@@ -320,7 +333,7 @@
   activity:
     details: "Building rollercoasters"
     state: "OpenRCT2"
-    large_image: "picord_game"
+    large_image: "picord"
     large_text: "OpenRCT2"
   priority: 10
   enabled: true
@@ -333,7 +346,7 @@
   activity:
     details: "Running Windows apps"
     state: "Wine"
-    large_image: "picord_game"
+    large_image: "picord"
     large_text: "Wine"
   priority: 2
   enabled: true
@@ -345,7 +358,7 @@
   activity:
     details: "Playing Windows games"
     state: "Proton"
-    large_image: "picord_game"
+    large_image: "picord"
     large_text: "Proton"
   priority: 2
   enabled: true
@@ -357,7 +370,7 @@
   activity:
     details: "Making games"
     state: "Godot Engine"
-    large_image: "picord_engine"
+    large_image: "picord"
     large_text: "Godot"
   priority: 5
   enabled: true
@@ -369,7 +382,7 @@
   activity:
     details: "Making games"
     state: "Unity Editor"
-    large_image: "picord_engine"
+    large_image: "picord"
     large_text: "Unity"
   priority: 5
   enabled: true
@@ -382,7 +395,7 @@
   activity:
     details: "Writing code"
     state: "Visual Studio Code"
-    large_image: "picord_ide"
+    large_image: "picord"
     large_text: "VSCode"
   priority: 3
   enabled: true
@@ -394,7 +407,7 @@
   activity:
     details: "Writing code"
     state: "VSCodium"
-    large_image: "picord_ide"
+    large_image: "picord"
     large_text: "VSCodium"
   priority: 3
   enabled: true
@@ -406,7 +419,7 @@
   activity:
     details: "Developing software"
     state: "IntelliJ IDEA"
-    large_image: "picord_ide"
+    large_image: "picord"
     large_text: "IntelliJ IDEA"
   priority: 3
   enabled: true
@@ -418,7 +431,7 @@
   activity:
     details: "Writing Python"
     state: "PyCharm"
-    large_image: "picord_ide"
+    large_image: "picord"
     large_text: "PyCharm"
   priority: 3
   enabled: true
@@ -430,7 +443,7 @@
   activity:
     details: "Writing Go"
     state: "GoLand"
-    large_image: "picord_ide"
+    large_image: "picord"
     large_text: "GoLand"
   priority: 3
   enabled: true
@@ -443,7 +456,7 @@
   activity:
     details: "Streaming / Recording"
     state: "OBS Studio"
-    large_image: "picord_tools"
+    large_image: "picord"
     large_text: "OBS Studio"
   priority: 5
   enabled: true
@@ -455,7 +468,7 @@
   activity:
     details: "Creating 3D art"
     state: "Blender"
-    large_image: "picord_tools"
+    large_image: "picord"
     large_text: "Blender"
   priority: 3
   enabled: true
@@ -467,7 +480,7 @@
   activity:
     details: "Drawing and painting"
     state: "Krita"
-    large_image: "picord_tools"
+    large_image: "picord"
     large_text: "Krita"
   priority: 3
   enabled: true
@@ -480,7 +493,7 @@
   activity:
     details: "Browsing the web"
     state: "Firefox"
-    large_image: "picord_browser"
+    large_image: "picord"
     large_text: "Firefox"
   priority: 1
   enabled: false
@@ -492,7 +505,7 @@
   activity:
     details: "Browsing the web"
     state: "Chromium"
-    large_image: "picord_browser"
+    large_image: "picord"
     large_text: "Chromium"
   priority: 1
   enabled: false

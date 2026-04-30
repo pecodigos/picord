@@ -12,6 +12,7 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"strings"
 )
 
 // ImageCacheDir returns the directory for cached images.
@@ -101,6 +102,10 @@ func isImageMIME(ct string) bool {
 	return ct == "image/jpeg" || ct == "image/png" || ct == "image/webp" || ct == "image/gif"
 }
 
+func isHTTPURL(s string) bool {
+	return strings.HasPrefix(s, "http://") || strings.HasPrefix(s, "https://")
+}
+
 type ImageMode string
 
 const (
@@ -128,7 +133,7 @@ func (r *ImageResolver) Resolve(entry Entry, profileActivityLargeImage string) s
 		}
 		return r.GenericAssetKey
 	case ImageModeExternalURL:
-		if r.ExternalEnabled && entry.ImageURL != "" {
+		if r.ExternalEnabled && entry.ImageURL != "" && isHTTPURL(entry.ImageURL) {
 			return entry.ImageURL
 		}
 		if profileActivityLargeImage != "" {
@@ -139,6 +144,9 @@ func (r *ImageResolver) Resolve(entry Entry, profileActivityLargeImage string) s
 		}
 		return r.GenericAssetKey
 	case ImageModeGeneric:
+		if entry.ImageURL != "" && isHTTPURL(entry.ImageURL) {
+			return entry.ImageURL
+		}
 		return r.GenericAssetKey
 	default:
 		return r.GenericAssetKey

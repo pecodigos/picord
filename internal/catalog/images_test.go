@@ -92,18 +92,18 @@ func TestDownloadImage_RejectsText(t *testing.T) {
 
 func TestImageResolver(t *testing.T) {
 	tests := []struct {
-		name        string
-		mode        ImageMode
-		genericKey  string
-		externalOn  bool
-		entry       Entry
-		profileImg  string
-		want        string
+		name       string
+		mode       ImageMode
+		genericKey string
+		externalOn bool
+		entry      Entry
+		profileImg string
+		want       string
 	}{
 		{
 			name:       "asset_key uses profile image",
 			mode:       ImageModeAssetKey,
-			genericKey: "picord_game",
+			genericKey: "picord",
 			entry:      Entry{DiscordAssetKey: "steam_620"},
 			profileImg: "my_custom_art",
 			want:       "my_custom_art",
@@ -111,39 +111,54 @@ func TestImageResolver(t *testing.T) {
 		{
 			name:       "asset_key falls back to entry asset key",
 			mode:       ImageModeAssetKey,
-			genericKey: "picord_game",
+			genericKey: "picord",
 			entry:      Entry{DiscordAssetKey: "steam_620"},
 			want:       "steam_620",
 		},
 		{
 			name:       "asset_key falls back to generic",
 			mode:       ImageModeAssetKey,
-			genericKey: "picord_game",
+			genericKey: "picord",
 			entry:      Entry{},
-			want:       "picord_game",
+			want:       "picord",
 		},
 		{
-			name:       "generic mode always returns generic key",
+			name:       "generic mode uses valid external URL when available",
 			mode:       ImageModeGeneric,
-			genericKey: "picord_game",
+			genericKey: "picord",
 			entry:      Entry{ImageURL: "http://example.com/img.jpg"},
-			want:       "picord_game",
+			want:       "http://example.com/img.jpg",
+		},
+		{
+			name:       "generic mode falls back to generic key for non-HTTP image",
+			mode:       ImageModeGeneric,
+			genericKey: "picord",
+			entry:      Entry{ImageURL: "firefox"},
+			want:       "picord",
 		},
 		{
 			name:       "external_url disabled falls back",
 			mode:       ImageModeExternalURL,
-			genericKey: "picord_game",
+			genericKey: "picord",
 			externalOn: false,
 			entry:      Entry{ImageURL: "http://example.com/img.jpg"},
-			want:       "picord_game",
+			want:       "picord",
 		},
 		{
 			name:       "external_url enabled returns image URL",
 			mode:       ImageModeExternalURL,
-			genericKey: "picord_game",
+			genericKey: "picord",
 			externalOn: true,
 			entry:      Entry{ImageURL: "http://example.com/img.jpg"},
 			want:       "http://example.com/img.jpg",
+		},
+		{
+			name:       "external_url skips non-HTTP desktop icons",
+			mode:       ImageModeExternalURL,
+			genericKey: "picord",
+			externalOn: true,
+			entry:      Entry{ImageURL: "firefox"},
+			want:       "picord",
 		},
 	}
 

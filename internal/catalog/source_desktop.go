@@ -60,6 +60,10 @@ func (s *DesktopSource) Refresh(ctx context.Context, store *Store, opts RefreshO
 
 			desktopID := strings.TrimSuffix(entry.Name(), ".desktop")
 			entryID := fmt.Sprintf("desktop:%s", desktopID)
+			imgURL := ""
+			if strings.HasPrefix(icon, "http://") || strings.HasPrefix(icon, "https://") {
+				imgURL = icon
+			}
 			e := Entry{
 				ID:              entryID,
 				Source:          "desktop",
@@ -67,7 +71,7 @@ func (s *DesktopSource) Refresh(ctx context.Context, store *Store, opts RefreshO
 				Kind:            EntryKindApplication,
 				Title:           name,
 				NormalizedTitle: NormalizeTitle(name),
-				ImageURL:        icon,
+				ImageURL:        imgURL,
 				ImageKind:       "desktop_icon",
 				UpdatedAt:       time.Now(),
 			}

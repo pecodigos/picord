@@ -9,16 +9,17 @@ const (
 )
 
 type Profile struct {
-	Name     string    `yaml:"name" json:"name"`
-	Match    MatchRule `yaml:"match" json:"match"`
-	Activity Activity  `yaml:"activity" json:"activity"`
-	Priority int       `yaml:"priority" json:"priority"`
-	Enabled  bool      `yaml:"enabled" json:"enabled"`
+	Name       string    `yaml:"name" json:"name"`
+	Match      MatchRule `yaml:"match" json:"match"`
+	Activity   Activity  `yaml:"activity" json:"activity"`
+	Priority   int       `yaml:"priority" json:"priority"`
+	Enabled    bool      `yaml:"enabled" json:"enabled"`
+	DiscordApp string    `yaml:"discord_app,omitempty" json:"discord_app,omitempty"`
 
 	isDefault bool `yaml:"-" json:"-"`
 }
 
-func (p *Profile) IsDefault() bool  { return p.isDefault }
+func (p *Profile) IsDefault() bool   { return p.isDefault }
 func (p *Profile) SetDefault(v bool) { p.isDefault = v }
 
 type MatchRule struct {

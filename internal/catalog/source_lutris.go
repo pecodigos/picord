@@ -13,10 +13,10 @@ import (
 const lutrisAPIBase = "https://lutris.net/api/games"
 
 type lutrisPage struct {
-	Count    int           `json:"count"`
-	Next     string        `json:"next"`
-	Previous string        `json:"previous"`
-	Results  []lutrisGame  `json:"results"`
+	Count    int          `json:"count"`
+	Next     string       `json:"next"`
+	Previous string       `json:"previous"`
+	Results  []lutrisGame `json:"results"`
 }
 
 type lutrisGame struct {

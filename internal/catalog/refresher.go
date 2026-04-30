@@ -9,13 +9,13 @@ import (
 
 // Refresher runs background catalog metadata refreshes on a schedule.
 type Refresher struct {
-	store     *Store
-	sources   []Source
-	interval  time.Duration
-	stopCh    chan struct{}
-	wg        sync.WaitGroup
-	mu        sync.Mutex
-	running   bool
+	store    *Store
+	sources  []Source
+	interval time.Duration
+	stopCh   chan struct{}
+	wg       sync.WaitGroup
+	mu       sync.Mutex
+	running  bool
 }
 
 // NewRefresher creates a refresher. If interval is 0, it defaults to 24 hours.
@@ -106,7 +106,7 @@ func (r *Refresher) refreshAll() {
 }
 
 // BuildSources creates source adapters from config source names.
-// Supported sources: steam_local, lutris_public, desktop.
+// Supported sources: steam_local, steam_shortcuts, lutris_public, desktop.
 // Unknown or legacy sources (e.g., lutris_local) are skipped with a warning.
 func BuildSources(sourceNames []string) ([]Source, []string) {
 	var sources []Source
@@ -115,6 +115,8 @@ func BuildSources(sourceNames []string) ([]Source, []string) {
 		switch name {
 		case "steam_local":
 			sources = append(sources, &SteamLocalSource{})
+		case "steam_shortcuts":
+			sources = append(sources, &SteamShortcutsSource{})
 		case "lutris_public":
 			sources = append(sources, &LutrisPublicSource{})
 		case "desktop":

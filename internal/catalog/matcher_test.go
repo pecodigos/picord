@@ -142,16 +142,16 @@ func TestMatcher_NoMatch(t *testing.T) {
 func TestMatchResult_ToProfile(t *testing.T) {
 	mr := &MatchResult{
 		Entry: Entry{
-			Title:   "Portal 2",
-			Source:  "steam",
-			Kind:    EntryKindGame,
+			Title:    "Portal 2",
+			Source:   "steam",
+			Kind:     EntryKindGame,
 			ImageURL: "https://example.com/img.jpg",
 		},
 		Confidence: 100,
 		Reason:     "steam_app_id",
 	}
 
-	resolver := ImageResolver{Mode: ImageModeGeneric, GenericAssetKey: "picord_game"}
+	resolver := ImageResolver{Mode: ImageModeGeneric, GenericAssetKey: "picord"}
 	p := mr.ToProfile(resolver)
 	if p.Name != "Portal 2" {
 		t.Errorf("name=%q, want Portal 2", p.Name)
@@ -159,7 +159,8 @@ func TestMatchResult_ToProfile(t *testing.T) {
 	if p.Activity.Details != "Playing Portal 2" {
 		t.Errorf("details=%q, want Playing Portal 2", p.Activity.Details)
 	}
-	if p.Activity.LargeImage != "picord_game" {
-		t.Errorf("large_image=%q, want picord_game", p.Activity.LargeImage)
+	// ImageModeGeneric now smartly falls back to a valid external URL when available.
+	if p.Activity.LargeImage != "https://example.com/img.jpg" {
+		t.Errorf("large_image=%q, want https://example.com/img.jpg", p.Activity.LargeImage)
 	}
 }

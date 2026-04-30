@@ -72,11 +72,69 @@ func TestLoad_DefaultsOnMissingFile(t *testing.T) {
 	if !cfg.Catalog.Enabled {
 		t.Error("expected default catalog.enabled to be true")
 	}
-	if cfg.Images.Mode != "generic" {
-		t.Errorf("expected default images.mode generic, got %q", cfg.Images.Mode)
+	if cfg.Images.Mode != "external_url" {
+		t.Errorf("expected default images.mode external_url, got %q", cfg.Images.Mode)
 	}
-	if cfg.Images.GenericAssetKey != "picord_game" {
-		t.Errorf("expected default images.generic_asset_key picord_game, got %q", cfg.Images.GenericAssetKey)
+	if !cfg.Images.ExternalValidated {
+		t.Error("expected default images.external_validated to be true")
+	}
+	if cfg.Images.GenericAssetKey != "picord" {
+		t.Errorf("expected default images.generic_asset_key picord, got %q", cfg.Images.GenericAssetKey)
+	}
+}
+
+func TestLoad_BackwardCompatAppID(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "config.yaml")
+
+	if err := os.WriteFile(path, []byte("app_id: legacy123\n"), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	cfg, err := Load(path)
+	if err != nil {
+		t.Fatalf("load failed: %v", err)
+	}
+
+	if cfg.AppID != "legacy123" {
+		t.Errorf("expected legacy app_id preserved, got %q", cfg.AppID)
+	}
+	if len(cfg.DiscordApps) != 1 {
+		t.Fatalf("expected 1 discord_app entry for backward compat, got %d", len(cfg.DiscordApps))
+	}
+	if cfg.DiscordApps["main"].ID != "legacy123" {
+		t.Errorf("expected main app ID legacy123, got %q", cfg.DiscordApps["main"].ID)
+	}
+}
+
+func TestResolveDiscordApp(t *testing.T) {
+	cfg := AppConfig{
+		AppID: "legacy123",
+		DiscordApps: map[string]DiscordApp{
+			"main":  {ID: "main456"},
+			"steam": {ID: "steam789"},
+		},
+	}
+
+	if got := cfg.ResolveDiscordApp(""); got != "main456" {
+		t.Errorf("expected empty key to resolve to main, got %q", got)
+	}
+	if got := cfg.ResolveDiscordApp("main"); got != "main456" {
+		t.Errorf("expected main key to resolve to main456, got %q", got)
+	}
+	if got := cfg.ResolveDiscordApp("steam"); got != "steam789" {
+		t.Errorf("expected steam key to resolve to steam789, got %q", got)
+	}
+	if got := cfg.ResolveDiscordApp("unknown"); got != "" {
+		t.Errorf("expected unknown key to resolve to empty, got %q", got)
+	}
+}
+
+func TestResolveDiscordApp_LegacyFallback(t *testing.T) {
+	cfg := AppConfig{AppID: "legacy123"}
+
+	if got := cfg.ResolveDiscordApp("main"); got != "legacy123" {
+		t.Errorf("expected main to fall back to legacy app_id, got %q", got)
 	}
 }
 

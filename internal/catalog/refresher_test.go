@@ -64,18 +64,21 @@ func TestRefresher_StopWaits(t *testing.T) {
 }
 
 func TestBuildSources(t *testing.T) {
-	sources, skipped := BuildSources([]string{"steam_local", "desktop"})
+	sources, skipped := BuildSources([]string{"steam_local", "steam_shortcuts", "desktop"})
 	if len(skipped) > 0 {
 		t.Fatalf("unexpected skipped sources: %v", skipped)
 	}
-	if len(sources) != 2 {
-		t.Fatalf("expected 2 sources, got %d", len(sources))
+	if len(sources) != 3 {
+		t.Fatalf("expected 3 sources, got %d", len(sources))
 	}
 	if sources[0].Name() != "steam_local" {
 		t.Errorf("expected steam_local, got %s", sources[0].Name())
 	}
-	if sources[1].Name() != "desktop" {
-		t.Errorf("expected desktop, got %s", sources[1].Name())
+	if sources[1].Name() != "steam_shortcuts" {
+		t.Errorf("expected steam_shortcuts, got %s", sources[1].Name())
+	}
+	if sources[2].Name() != "desktop" {
+		t.Errorf("expected desktop, got %s", sources[2].Name())
 	}
 }
 

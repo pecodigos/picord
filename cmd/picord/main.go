@@ -426,11 +426,11 @@ func defaultConfig() config.AppConfig {
 			RefreshHours: 24,
 		},
 		Images: config.ImageConfig{
-			Mode:              "generic",
+			Mode:              "external_url",
 			CacheEnabled:      true,
 			MaxCacheMB:        512,
-			GenericAssetKey:   "picord_game",
-			ExternalValidated: false,
+			GenericAssetKey:   "picord",
+			ExternalValidated: true,
 		},
 	}
 }
