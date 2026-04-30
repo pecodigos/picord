@@ -44,6 +44,8 @@ func runCLI(args []string, debug bool) int {
 		return cmdClear()
 	case "reload":
 		return cmdReload()
+	case "auto-detect":
+		return cmdAutoDetect(args[1:])
 	case "catalog":
 		return cmdCatalog(args[1:])
 	case "debug-rpc-image":
@@ -94,6 +96,7 @@ Commands:
   override         Set a manual override
   clear            Clear manual override
   reload           Reload configuration from disk
+  auto-detect      Enable or disable auto-detection (on|off)
   catalog          Catalog management (status, search, refresh, enrich)
   debug-rpc-image  Test a Discord Rich Presence image
   debug-processes  Show process identity hints and Wine/Proton aliases
@@ -429,6 +432,36 @@ func cmdReload() int {
 		return 1
 	}
 	printResponse(resp)
+	return 0
+}
+
+func cmdAutoDetect(args []string) int {
+	if len(args) == 0 {
+		fmt.Fprintln(os.Stderr, "Usage: picord auto-detect [on|off]")
+		return 1
+	}
+	var enabled bool
+	switch args[0] {
+	case "on", "enable", "true", "1":
+		enabled = true
+	case "off", "disable", "false", "0":
+		enabled = false
+	default:
+		fmt.Fprintf(os.Stderr, "Usage: picord auto-detect [on|off]\n")
+		return 1
+	}
+
+	resp, err := apiPost("/api/settings", map[string]any{"auto_detect": enabled})
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "Cannot connect to picord daemon: %v\n", err)
+		return 1
+	}
+	if resp.StatusCode >= 200 && resp.StatusCode < 300 {
+		fmt.Printf("Auto-detect: %v\n", enabled)
+	} else {
+		printResponse(resp)
+		return 1
+	}
 	return 0
 }
 

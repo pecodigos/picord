@@ -91,7 +91,36 @@ A tray icon appears after login. Right-click for the menu and choose Settings to
 
 ## Autostart
 
-### Systemd (recommended)
+### Desktop autostart (recommended for tray)
+
+The Settings dialog manages desktop autostart. To set it up manually:
+
+```bash
+# Install the binary
+mkdir -p ~/.local/bin
+cp bin/picord ~/.local/bin/
+
+# Enable desktop autostart
+mkdir -p ~/.config/autostart/
+cp resources/picord.desktop ~/.config/autostart/
+```
+
+Copy the tray icon (optional but recommended):
+
+```bash
+mkdir -p ~/.local/share/icons/hicolor/128x128/apps/
+cp icons/picord_128.png ~/.local/share/icons/hicolor/128x128/apps/picord.png
+```
+
+After reboot, verify with:
+
+```bash
+pgrep -a picord
+```
+
+Right-click the tray icon and choose Settings to confirm everything is working.
+
+### Systemd (advanced/headless)
 
 ```bash
 mkdir -p ~/.config/systemd/user/
@@ -99,19 +128,7 @@ cp resources/picord.service ~/.config/systemd/user/
 systemctl --user enable --now picord
 ```
 
-### Desktop autostart
-
-```bash
-mkdir -p ~/.config/autostart/
-cp resources/picord.desktop ~/.config/autostart/
-```
-
-Then copy the icon:
-
-```bash
-mkdir -p ~/.local/share/icons/hicolor/128x128/apps/
-cp icons/picord_128.png ~/.local/share/icons/hicolor/128x128/apps/picord.png
-```
+Note: systemd user services may start before the graphical tray environment is ready. Desktop autostart is more reliable for tray access.
 
 ## Configuration
 
