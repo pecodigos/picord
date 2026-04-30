@@ -119,7 +119,7 @@
   priority: 10
   enabled: true
 
-# === SOFTWARE FOR GAMES — Emulators (enabled by default) ===
+# === EMULATORS (enabled by default) ===
 - name: "RetroArch"
   match:
     type: process_name
@@ -264,7 +264,7 @@
   priority: 10
   enabled: true
 
-# === SOFTWARE FOR GAMES — Source Ports (enabled by default) ===
+# === SOURCE PORTS (enabled by default) ===
 - name: "GZDoom"
   match:
     type: process_name
@@ -272,7 +272,7 @@
   activity:
     details: "Ripping and tearing"
     state: "GZDoom"
-    large_image: "picord_sourceport"
+    large_image: "picord_game"
     large_text: "GZDoom"
   priority: 10
   enabled: true
@@ -284,7 +284,7 @@
   activity:
     details: "Exploring Morrowind"
     state: "OpenMW"
-    large_image: "picord_sourceport"
+    large_image: "picord_game"
     large_text: "OpenMW"
   priority: 10
   enabled: true
@@ -296,7 +296,7 @@
   activity:
     details: "Command & Conquer"
     state: "OpenRA"
-    large_image: "picord_sourceport"
+    large_image: "picord_game"
     large_text: "OpenRA"
   priority: 10
   enabled: true
@@ -308,7 +308,7 @@
   activity:
     details: "Building transport empires"
     state: "OpenTTD"
-    large_image: "picord_sourceport"
+    large_image: "picord_game"
     large_text: "OpenTTD"
   priority: 10
   enabled: true
@@ -320,73 +320,12 @@
   activity:
     details: "Building rollercoasters"
     state: "OpenRCT2"
-    large_image: "picord_sourceport"
+    large_image: "picord_game"
     large_text: "OpenRCT2"
   priority: 10
   enabled: true
 
-# === SOFTWARE FOR GAMES — Launchers (enabled by default) ===
-- name: "Steam"
-  match:
-    type: process_name
-    value: "steam"
-  activity:
-    details: "In Steam"
-    state: "Browsing library"
-    large_image: "picord_launcher"
-    large_text: "Steam"
-  priority: 5
-  enabled: true
-
-- name: "Lutris"
-  match:
-    type: process_name
-    value: "lutris"
-  activity:
-    details: "Gaming on Linux"
-    state: "Lutris"
-    large_image: "picord_launcher"
-    large_text: "Lutris"
-  priority: 5
-  enabled: true
-
-- name: "Heroic Games Launcher"
-  match:
-    type: process_name
-    value: "heroic"
-  activity:
-    details: "Playing games"
-    state: "Heroic Games Launcher"
-    large_image: "picord_launcher"
-    large_text: "Heroic"
-  priority: 5
-  enabled: true
-
-- name: "Prism Launcher"
-  match:
-    type: process_name
-    value: "prismlauncher"
-  activity:
-    details: "Playing Minecraft"
-    state: "Prism Launcher"
-    large_image: "picord_launcher"
-    large_text: "Prism Launcher"
-  priority: 8
-  enabled: true
-
-- name: "MultiMC"
-  match:
-    type: process_name
-    value: "multimc"
-  activity:
-    details: "Playing Minecraft"
-    state: "MultiMC"
-    large_image: "picord_launcher"
-    large_text: "MultiMC"
-  priority: 8
-  enabled: true
-
-# === SOFTWARE FOR GAMES — Compatibility / Engines (enabled by default) ===
+# === COMPATIBILITY / ENGINES (enabled by default) ===
 - name: "Wine"
   match:
     type: process_name
@@ -394,7 +333,7 @@
   activity:
     details: "Running Windows apps"
     state: "Wine"
-    large_image: "picord_wine"
+    large_image: "picord_game"
     large_text: "Wine"
   priority: 2
   enabled: true
@@ -406,7 +345,7 @@
   activity:
     details: "Playing Windows games"
     state: "Proton"
-    large_image: "picord_wine"
+    large_image: "picord_game"
     large_text: "Proton"
   priority: 2
   enabled: true
@@ -435,6 +374,104 @@
   priority: 5
   enabled: true
 
+# === IDEs (enabled by default) ===
+- name: "VSCode"
+  match:
+    type: process_name
+    value: "code"
+  activity:
+    details: "Writing code"
+    state: "Visual Studio Code"
+    large_image: "picord_ide"
+    large_text: "VSCode"
+  priority: 3
+  enabled: true
+
+- name: "VSCodium"
+  match:
+    type: process_name
+    value: "codium"
+  activity:
+    details: "Writing code"
+    state: "VSCodium"
+    large_image: "picord_ide"
+    large_text: "VSCodium"
+  priority: 3
+  enabled: true
+
+- name: "IntelliJ IDEA"
+  match:
+    type: process_name
+    value: "idea"
+  activity:
+    details: "Developing software"
+    state: "IntelliJ IDEA"
+    large_image: "picord_ide"
+    large_text: "IntelliJ IDEA"
+  priority: 3
+  enabled: true
+
+- name: "PyCharm"
+  match:
+    type: process_name
+    value: "pycharm"
+  activity:
+    details: "Writing Python"
+    state: "PyCharm"
+    large_image: "picord_ide"
+    large_text: "PyCharm"
+  priority: 3
+  enabled: true
+
+- name: "GoLand"
+  match:
+    type: process_name
+    value: "goland"
+  activity:
+    details: "Writing Go"
+    state: "GoLand"
+    large_image: "picord_ide"
+    large_text: "GoLand"
+  priority: 3
+  enabled: true
+
+# === CREATIVE TOOLS (enabled by default) ===
+- name: "OBS Studio"
+  match:
+    type: process_name
+    value: "obs"
+  activity:
+    details: "Streaming / Recording"
+    state: "OBS Studio"
+    large_image: "picord_tools"
+    large_text: "OBS Studio"
+  priority: 5
+  enabled: true
+
+- name: "Blender"
+  match:
+    type: process_name
+    value: "blender"
+  activity:
+    details: "Creating 3D art"
+    state: "Blender"
+    large_image: "picord_tools"
+    large_text: "Blender"
+  priority: 3
+  enabled: true
+
+- name: "Krita"
+  match:
+    type: process_name
+    value: "krita"
+  activity:
+    details: "Drawing and painting"
+    state: "Krita"
+    large_image: "picord_tools"
+    large_text: "Krita"
+  priority: 3
+  enabled: true
+
 # === DESKTOP APPS (disabled by default — not tracked) ===
 - name: "Firefox"
   match:
@@ -457,149 +494,5 @@
     state: "Chromium"
     large_image: "picord_browser"
     large_text: "Chromium"
-  priority: 1
-  enabled: false
-
-- name: "VSCode"
-  match:
-    type: process_name
-    value: "code"
-  activity:
-    details: "Writing code"
-    state: "Visual Studio Code"
-    large_image: "picord_editor"
-    large_text: "VSCode"
-  priority: 3
-  enabled: false
-
-- name: "VSCodium"
-  match:
-    type: process_name
-    value: "codium"
-  activity:
-    details: "Writing code"
-    state: "VSCodium"
-    large_image: "picord_editor"
-    large_text: "VSCodium"
-  priority: 3
-  enabled: false
-
-- name: "IntelliJ IDEA"
-  match:
-    type: process_name
-    value: "idea"
-  activity:
-    details: "Developing software"
-    state: "IntelliJ IDEA"
-    large_image: "picord_editor"
-    large_text: "IntelliJ IDEA"
-  priority: 3
-  enabled: false
-
-- name: "PyCharm"
-  match:
-    type: process_name
-    value: "pycharm"
-  activity:
-    details: "Writing Python"
-    state: "PyCharm"
-    large_image: "picord_editor"
-    large_text: "PyCharm"
-  priority: 3
-  enabled: false
-
-- name: "GoLand"
-  match:
-    type: process_name
-    value: "goland"
-  activity:
-    details: "Writing Go"
-    state: "GoLand"
-    large_image: "picord_editor"
-    large_text: "GoLand"
-  priority: 3
-  enabled: false
-
-- name: "Spotify"
-  match:
-    type: process_name
-    value: "spotify"
-  activity:
-    details: "Listening to music"
-    state: "Spotify"
-    large_image: "picord_media"
-    large_text: "Spotify"
-  priority: 2
-  enabled: false
-
-- name: "VLC"
-  match:
-    type: process_name
-    value: "vlc"
-  activity:
-    details: "Watching media"
-    state: "VLC Media Player"
-    large_image: "picord_media"
-    large_text: "VLC"
-  priority: 2
-  enabled: false
-
-- name: "mpv"
-  match:
-    type: process_name
-    value: "mpv"
-  activity:
-    details: "Watching media"
-    state: "mpv"
-    large_image: "picord_media"
-    large_text: "mpv"
-  priority: 2
-  enabled: false
-
-- name: "OBS Studio"
-  match:
-    type: process_name
-    value: "obs"
-  activity:
-    details: "Streaming / Recording"
-    state: "OBS Studio"
-    large_image: "picord_media"
-    large_text: "OBS Studio"
-  priority: 5
-  enabled: false
-
-- name: "Blender"
-  match:
-    type: process_name
-    value: "blender"
-  activity:
-    details: "Creating 3D art"
-    state: "Blender"
-    large_image: "picord_creator"
-    large_text: "Blender"
-  priority: 3
-  enabled: false
-
-- name: "Krita"
-  match:
-    type: process_name
-    value: "krita"
-  activity:
-    details: "Drawing and painting"
-    state: "Krita"
-    large_image: "picord_creator"
-    large_text: "Krita"
-  priority: 3
-  enabled: false
-
-- name: "Discord"
-  match:
-    type: process_name
-    value: "discord"
-  activity:
-    details: "Chatting on Discord"
-    state: "Discord"
-    large_image: "picord_chat"
-    large_text: "Discord"
   priority: 1
   enabled: false
