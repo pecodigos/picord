@@ -26,6 +26,7 @@ type AppState struct {
 	detectedProcs []profile.DetectedProcess
 	override      *profile.Profile
 	autoDetect    bool
+	lastScanTime  string // RFC3339
 }
 
 func NewAppState() *AppState {
@@ -52,6 +53,12 @@ func (s *AppState) SetDetected(procs []profile.DetectedProcess) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	s.detectedProcs = procs
+}
+
+func (s *AppState) SetLastScanTime(t string) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.lastScanTime = t
 }
 
 func (s *AppState) AutoDetectEnabled() bool {
@@ -96,23 +103,28 @@ func (srv *Server) SetToken(t string) {
 }
 
 type sanitizedProcess struct {
-	PID         int    `json:"pid"`
-	Name        string `json:"name"`
-	WindowTitle string `json:"window_title,omitempty"`
-	SteamAppID  string `json:"steam_app_id,omitempty"`
-	DesktopID   string `json:"desktop_id,omitempty"`
+	PID         int      `json:"pid"`
+	Name        string   `json:"name"`
+	WindowTitle string   `json:"window_title,omitempty"`
+	SteamAppID  string   `json:"steam_app_id,omitempty"`
+	DesktopID   string   `json:"desktop_id,omitempty"`
+	Aliases     []string `json:"aliases,omitempty"`
 }
 
-func sanitizeDetected(procs []profile.DetectedProcess) []sanitizedProcess {
+func sanitizeDetected(procs []profile.DetectedProcess, verbose bool) []sanitizedProcess {
 	out := make([]sanitizedProcess, len(procs))
 	for i, p := range procs {
-		out[i] = sanitizedProcess{
+		sp := sanitizedProcess{
 			PID:         p.PID,
 			Name:        p.Name,
 			WindowTitle: p.WindowTitle,
-			SteamAppID:  p.SteamAppID,
-			DesktopID:   p.DesktopID,
 		}
+		if verbose {
+			sp.SteamAppID = p.SteamAppID
+			sp.DesktopID = p.DesktopID
+			sp.Aliases = p.Aliases
+		}
+		out[i] = sp
 	}
 	return out
 }
@@ -123,6 +135,7 @@ type statusResponse struct {
 	DetectedProcs []sanitizedProcess `json:"detected_processes"`
 	AutoDetect    bool               `json:"auto_detect"`
 	HasOverride   bool               `json:"has_override"`
+	LastScanTime  string             `json:"last_scan_time,omitempty"`
 }
 
 func New(s *AppState, pm *profile.Manager, cs *catalog.Store) *Server {
@@ -203,13 +216,16 @@ func (srv *Server) handleStatus(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	verbose := r.URL.Query().Get("verbose") == "1"
+
 	srv.state.mu.RLock()
 	resp := statusResponse{
 		ActiveName:    srv.state.activeName,
 		ActiveProcess: srv.state.activeProc,
-		DetectedProcs: sanitizeDetected(srv.state.detectedProcs),
+		DetectedProcs: sanitizeDetected(srv.state.detectedProcs, verbose),
 		AutoDetect:    srv.state.autoDetect,
 		HasOverride:   srv.state.override != nil,
+		LastScanTime:  srv.state.lastScanTime,
 	}
 	srv.state.mu.RUnlock()
 	writeJSON(w, resp)

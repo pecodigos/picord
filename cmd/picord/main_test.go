@@ -8,6 +8,7 @@ import (
 	"io"
 	"net"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
@@ -548,5 +549,46 @@ func TestSelectBestPresence_NoMatches(t *testing.T) {
 	winner := selectBestPresence(context.Background(), pm, nil, catalog.ImageResolver{}, procs)
 	if winner != nil {
 		t.Errorf("expected no winner, got %+v", winner)
+	}
+}
+
+func TestDebugProcessViewRedactsPrivateFields(t *testing.T) {
+	views := debugProcessViews([]profile.DetectedProcess{{
+		PID:         42,
+		Name:        "wine",
+		WindowTitle: "Portal 2",
+		SteamAppID:  "620",
+		Aliases:     []string{"portal2.exe"},
+		ExePath:     "/home/alice/private/portal2.exe",
+		Cwd:         "/home/alice/private",
+		Args:        []string{"portal2.exe", "--token=secret"},
+	}})
+	data, err := json.Marshal(views)
+	if err != nil {
+		t.Fatalf("marshal: %v", err)
+	}
+	body := string(data)
+	for _, secret := range []string{"exe_path", "cwd", "args", "/home/alice/private", "--token=secret"} {
+		if strings.Contains(body, secret) {
+			t.Fatalf("debug JSON leaked %q: %s", secret, body)
+		}
+	}
+	for _, expected := range []string{"Portal 2", "620", "portal2.exe"} {
+		if !strings.Contains(body, expected) {
+			t.Fatalf("debug JSON missing %q: %s", expected, body)
+		}
+	}
+}
+
+func TestDebugProcessNameMatchesAliases(t *testing.T) {
+	proc := profile.DetectedProcess{Name: "wine", Aliases: []string{"Lethal Company.exe"}, SteamAppID: "1966720"}
+	if !debugProcessNameMatches(proc, "lethal") {
+		t.Fatal("expected name filter to match aliases")
+	}
+	if !debugProcessNameMatches(proc, "1966720") {
+		t.Fatal("expected name filter to match Steam AppID")
+	}
+	if debugProcessNameMatches(proc, "firefox") {
+		t.Fatal("did not expect unrelated query to match")
 	}
 }

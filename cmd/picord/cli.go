@@ -30,7 +30,7 @@ func runCLI(args []string, debug bool) int {
 	case "run":
 		return runDaemon(debug)
 	case "status":
-		return cmdStatus()
+		return cmdStatus(args[1:])
 	case "profiles", "profile":
 		return cmdProfiles(args[1:])
 	case "override":
@@ -44,7 +44,7 @@ func runCLI(args []string, debug bool) int {
 	case "debug-rpc-image":
 		return cmdDebugRPCImage(args[1:])
 	case "debug-processes":
-		return cmdDebugProcesses()
+		return cmdDebugProcesses(args[1:])
 	case "help", "-h", "--help":
 		printUsage()
 		return 0
@@ -69,6 +69,17 @@ Commands:
   debug-rpc-image  Test a Discord Rich Presence image
   debug-processes  Show process identity hints and Wine/Proton aliases
   help             Show this help message
+
+Status options:
+  --verbose        Include aliases and Steam app IDs
+
+Debug-processes options:
+  --wine           Show only Wine-related processes
+  --proton         Show only Proton-related processes
+  --with-aliases   Show only processes with aliases
+  --name <filter>  Filter by process name substring
+  --pid <n>        Filter by exact PID
+  --json           Output as JSON
 
 Override options:
   -n, --name       Profile name
@@ -158,8 +169,16 @@ func printResponse(resp *http.Response) {
 	}
 }
 
-func cmdStatus() int {
-	resp, err := apiGet("/api/status")
+func cmdStatus(args []string) int {
+	fs := flag.NewFlagSet("status", flag.ExitOnError)
+	verbose := fs.Bool("verbose", false, "Show verbose output including aliases")
+	fs.Parse(args)
+
+	path := "/api/status"
+	if *verbose {
+		path += "?verbose=1"
+	}
+	resp, err := apiGet(path)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "Cannot connect to picord daemon: %v\n", err)
 		return 1
@@ -172,46 +191,85 @@ func cmdStatus() int {
 		return 1
 	}
 
-	active := result["active_name"].(string)
+	active := safeString(result, "active_name")
 	if active == "" {
 		active = "(none)"
 	}
-	proc := result["active_process"].(string)
+	proc := safeString(result, "active_process")
 	if proc == "" {
 		proc = "(none)"
 	}
-	auto := result["auto_detect"].(bool)
-	override := result["has_override"].(bool)
+	auto := safeBool(result, "auto_detect")
+	override := safeBool(result, "has_override")
 
 	fmt.Printf("Active Profile: %s\n", active)
 	fmt.Printf("Active Process: %s\n", proc)
 	fmt.Printf("Auto-Detect:    %v\n", auto)
 	fmt.Printf("Has Override:   %v\n", override)
 
+	if t := safeString(result, "last_scan_time"); t != "" {
+		fmt.Printf("Last Scan:      %s\n", t)
+	}
+
 	if procs, ok := result["detected_processes"].([]any); ok && len(procs) > 0 {
 		fmt.Printf("\nDetected Processes:\n")
 		w := tabwriter.NewWriter(os.Stdout, 0, 0, 2, ' ', 0)
-		fmt.Fprintln(w, "PID\tNAME\tWINDOW TITLE")
+		if *verbose {
+			fmt.Fprintln(w, "PID\tNAME\tSTEAM\tALIASES\tWINDOW TITLE")
+		} else {
+			fmt.Fprintln(w, "PID\tNAME\tWINDOW TITLE")
+		}
 		for _, p := range procs {
 			if m, ok := p.(map[string]any); ok {
-				pid, _ := m["pid"].(float64)
-				if pid == 0 {
-					pid, _ = m["PID"].(float64)
-				}
-				name, _ := m["name"].(string)
-				if name == "" {
-					name, _ = m["Name"].(string)
-				}
-				title, _ := m["window_title"].(string)
+				pid := safeFloat64(m, "pid")
+				name := safeString(m, "name")
+				title := safeString(m, "window_title")
 				if title == "" {
 					title = "-"
 				}
-				fmt.Fprintf(w, "%.0f\t%s\t%s\n", pid, name, title)
+				if *verbose {
+					steam := safeString(m, "steam_app_id")
+					if steam == "" {
+						steam = "-"
+					}
+					aliases := "-"
+					if a, ok := m["aliases"].([]any); ok && len(a) > 0 {
+						parts := make([]string, len(a))
+						for i, v := range a {
+							parts[i] = fmt.Sprint(v)
+						}
+						aliases = strings.Join(parts, ", ")
+					}
+					fmt.Fprintf(w, "%.0f\t%s\t%s\t%s\t%s\n", pid, name, steam, aliases, title)
+				} else {
+					fmt.Fprintf(w, "%.0f\t%s\t%s\n", pid, name, title)
+				}
 			}
 		}
 		w.Flush()
 	}
 
+	return 0
+}
+
+func safeString(m map[string]any, key string) string {
+	if v, ok := m[key].(string); ok {
+		return v
+	}
+	return ""
+}
+
+func safeBool(m map[string]any, key string) bool {
+	if v, ok := m[key].(bool); ok {
+		return v
+	}
+	return false
+}
+
+func safeFloat64(m map[string]any, key string) float64 {
+	if v, ok := m[key].(float64); ok {
+		return v
+	}
 	return 0
 }
 
@@ -362,16 +420,97 @@ func cmdDebugRPCImage(args []string) int {
 	return 0
 }
 
-func cmdDebugProcesses() int {
+type debugProcessView struct {
+	PID         int      `json:"pid"`
+	Name        string   `json:"name"`
+	WindowTitle string   `json:"window_title,omitempty"`
+	SteamAppID  string   `json:"steam_app_id,omitempty"`
+	DesktopID   string   `json:"desktop_id,omitempty"`
+	Aliases     []string `json:"aliases,omitempty"`
+}
+
+func newDebugProcessView(p profile.DetectedProcess) debugProcessView {
+	return debugProcessView{
+		PID:         p.PID,
+		Name:        p.Name,
+		WindowTitle: p.WindowTitle,
+		SteamAppID:  p.SteamAppID,
+		DesktopID:   p.DesktopID,
+		Aliases:     p.Aliases,
+	}
+}
+
+func debugProcessViews(procs []profile.DetectedProcess) []debugProcessView {
+	views := make([]debugProcessView, len(procs))
+	for i, p := range procs {
+		views[i] = newDebugProcessView(p)
+	}
+	return views
+}
+
+func debugProcessNameMatches(p profile.DetectedProcess, query string) bool {
+	query = strings.ToLower(query)
+	if query == "" {
+		return true
+	}
+	fields := []string{p.Name, p.WindowTitle, p.SteamAppID, p.DesktopID}
+	fields = append(fields, p.Aliases...)
+	for _, f := range fields {
+		if strings.Contains(strings.ToLower(f), query) {
+			return true
+		}
+	}
+	return false
+}
+
+func cmdDebugProcesses(args []string) int {
+	fs := flag.NewFlagSet("debug-processes", flag.ExitOnError)
+	wineOnly := fs.Bool("wine", false, "Show only Wine-related processes")
+	protonOnly := fs.Bool("proton", false, "Show only Proton-related processes")
+	withAliases := fs.Bool("with-aliases", false, "Show only processes with aliases")
+	nameFilter := fs.String("name", "", "Filter by process name (substring match)")
+	pidFilter := fs.Int("pid", 0, "Filter by exact PID")
+	jsonOut := fs.Bool("json", false, "Output as JSON")
+	fs.Parse(args)
+
 	procs := monitor.ResolveProcessIdentities()
-	if len(procs) == 0 {
-		fmt.Println("No processes detected.")
+
+	// Apply filters
+	var filtered []profile.DetectedProcess
+	for _, p := range procs {
+		if *wineOnly && !strings.Contains(strings.ToLower(p.Name), "wine") {
+			continue
+		}
+		if *protonOnly && !strings.Contains(strings.ToLower(p.Name), "proton") && !strings.HasPrefix(strings.ToLower(p.Name), "pressure-vessel-") {
+			continue
+		}
+		if *withAliases && len(p.Aliases) == 0 {
+			continue
+		}
+		if *nameFilter != "" && !debugProcessNameMatches(p, *nameFilter) {
+			continue
+		}
+		if *pidFilter != 0 && p.PID != *pidFilter {
+			continue
+		}
+		filtered = append(filtered, p)
+	}
+
+	if *jsonOut {
+		enc := json.NewEncoder(os.Stdout)
+		enc.SetIndent("", "  ")
+		_ = enc.Encode(debugProcessViews(filtered))
+		return 0
+	}
+
+	if len(filtered) == 0 {
+		fmt.Println("No processes match the filter criteria.")
 		return 0
 	}
 
 	w := tabwriter.NewWriter(os.Stdout, 0, 0, 2, ' ', 0)
 	fmt.Fprintln(w, "PID\tNAME\tSTEAM APP\tALIASES\tWINDOW TITLE")
-	for _, p := range procs {
+	for _, p := range filtered {
 		steamAppID := p.SteamAppID
 		if steamAppID == "" {
 			steamAppID = "-"

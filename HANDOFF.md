@@ -4,7 +4,7 @@ Updated: 2026-04-30
 
 ## Current focus
 
-Kimi finished a first implementation pass for Wine/Proton process identity detection. This pass analyzed it, stabilized build/runtime blockers found during review, and created the next implementation plan.
+The 7-step post-Kimi Wine/Proton stabilization pass is complete. This pass performed a second deep audit, fixed the highest-confidence issues found immediately, and wrote the next follow-up plan.
 
 Picord is still targeting the user's Discord application:
 
@@ -15,67 +15,75 @@ Picord is still targeting the user's Discord application:
 
 - Repository: `/mnt/hdd/Code/2026/picord`
 - Branch: `master`
-- Base before this review: `754c71b feat: configure Picord app default and plan Wine detection`
-- New code stabilization commits created in this review:
-  - `373c083 feat: add Wine Proton process identity aliases`
-  - `aae3557 fix: allow Steam shortcuts catalog refresh`
-- New plan file:
-  - `docs/plans/2026-04-30-post-kimi-wine-identity-stabilization.md`
+- Main completed plan: `docs/plans/2026-04-30-post-kimi-wine-identity-stabilization.md`
+- Follow-up plan: `docs/plans/2026-04-30-post-stabilization-follow-up.md`
 
-## What changed in Kimi's iteration
+## What is now implemented
 
-Kimi's work moved the Wine/Proton plan from documentation into a working first pass:
+Wine/Proton identity detection now includes:
 
-- Added `/proc` process table support in `internal/monitor/proctable.go`.
-- Added Wine/Proton/Steam carrier classification and alias enrichment in `internal/monitor/identity.go`.
-- Routed monitor scanning through `ResolveProcessIdentities()`.
-- Added aliases to `profile.DetectedProcess`.
-- Made profile matching alias-aware.
-- Made catalog matching alias-aware.
-- Added `picord debug-processes` as a process identity inspection command.
-- Added unit tests for process table walking and Wine/Proton alias enrichment.
+- `/proc` process table support with PID, PPID, PGID, SID, exe path, cwd, cmdline args, allowlisted env hints, and window titles.
+- Steam AppID extraction from args and allowlisted env:
+  - `AppId=620`
+  - `steam://rungameid/620`
+  - `steam://run/620`
+  - `--appid 620`
+  - `SteamAppId`, `SteamGameId`, `SteamAppID`, `SteamOverlayGameId`, `SteamCompatAppId`
+- `DetectedProcess.SteamAppID` propagation through the resolver.
+- Wine/Proton/Steam carrier classification and alias enrichment from related processes.
+- Relationship gating for same-PGID peers behind Wine/Proton/Steam shared clues.
+- SID peers disabled by default.
+- Windows path alias normalization using basenames only.
+- Catalog matching over all candidates with confidence and source-priority tie-breaking.
+- Profile/catalog matching aware of aliases.
+- `scan_all_processes = false` candidate-first scanning that returns only Discord IPC candidates.
+- `/api/status?verbose=1` and `picord status --verbose` with sanitized identity fields.
+- `picord debug-processes` filters:
+  - `--wine`
+  - `--proton`
+  - `--with-aliases`
+  - `--name`
+  - `--pid`
+  - `--json`
 
-## Stabilization applied during this review
+## Extra fixes from the second audit
 
-### Build/debug command fix
+The second audit found and fixed several latent issues after the original 7 steps:
 
-Kimi's iteration added the `debug-processes` command entry but the command function was missing. This review added `cmdDebugProcesses()` so the project compiles and the command shows:
+1. Namespace parsing corrected.
+   - Multi-value `NSpgid` and `NSsid` now use the leftmost procfs-visible value, not the inner namespace value.
+   - Test: `TestReadProcStatusMultiValueNamespace`.
 
-- PID
-- process name
-- Steam app ID
-- aliases
-- window title
+2. Ancestor traversal hardened.
+   - `Ancestors()` now has cycle protection, matching `Descendants()`.
+   - Test: `TestAncestorsCycleProtection`.
 
-### Real Linux process table fix
+3. Windows cmdline process names sanitized.
+   - A cmdline argv0 such as `C:\Users\alice\Games\Lethal Company\Lethal Company.exe` becomes `Lethal Company.exe`.
+   - Aliases do not expose full Windows paths.
+   - Test: `TestResolveProcessIdentities_SanitizesWindowsCmdlineName`.
 
-Real `/proc/<pid>/status` commonly has `NSpgid` and `NSsid`, not `Pgid` and `Sid`. The first pass parsed `NSpgid` but not `NSsid`, which could leave session IDs as `0`.
+4. Steam AppID validation tightened.
+   - App IDs are digit-only; `+620` and `-620` are ignored.
+   - Tests in monitor and catalog matcher cover signed values.
 
-This review fixed that and added guardrails so unknown `Pgid`/`Sid` value `0` does not make every process look related.
+5. Legacy hint parsing consolidated.
+   - `readProcHints` now uses the same `ExtractSteamAppID` helper and includes `SteamCompatAppId`.
 
-Tests added:
+6. Catalog ambiguity improved.
+   - `Matcher` now appends all entries returned by alias/title searches instead of only `entries[0]`.
+   - `steam_shortcut` source gets Steam-like tie priority.
+   - Test: `TestMatcher_EvaluatesAllAliasCandidatesForTieBreak`.
 
-- namespace session parsing from `NSsid`
-- unknown session peers are ignored
-- unknown process-group peers are ignored
-
-### Steam shortcuts manual refresh fix
-
-The docs and intended user testing flow use:
-
-```bash
-bin/picord catalog refresh --source steam_shortcuts
-```
-
-Auto-refresh already had Steam shortcuts support, but the daemon API did not accept `steam_shortcuts` in manual refresh requests. This review added server support and updated the CLI help text.
-
-Test added:
-
-- `TestHandleCatalogRefreshAcceptsSteamShortcuts`
+7. Status/debug privacy improved.
+   - Default `/api/status` does not include aliases, Steam app ID, or desktop ID.
+   - Verbose status includes those fields but never exe path, cwd, args, or env.
+   - `debug-processes --json` emits sanitized DTOs and stays valid JSON even when no rows match.
+   - `debug-processes --name` searches aliases, window title, Steam AppID, and desktop ID, not just process name.
 
 ## Validation status
 
-Latest validation run during this review:
+Latest validation passed:
 
 ```bash
 git diff --check
@@ -85,57 +93,44 @@ go test -race ./...
 make build
 ```
 
-All passed after the stabilization commits. Re-run this same gate after future code changes.
+`make build` produced `bin/picord`.
 
-## Current implementation quality read
+## Main remaining risks
 
-Good foundation:
+1. Relation-source tracking is still missing.
+   - The resolver can say what aliases exist, but not yet which relation supplied them.
+   - Ancestor aliases need tighter source-aware propagation to avoid shell/terminal noise.
 
-- Wine/Proton carrier processes can now receive aliases from related processes.
-- The matching pipeline can use aliases for profile and catalog matching.
-- The user now has a debug entry point to inspect process identity data.
-- Manual Steam shortcut catalog refresh now works through the daemon path.
+2. `scan_all_processes=false` may miss same-PGID Wine/Proton peer aliases.
+   - It avoids broad env/cmdline reads, but it only fully enriches IPC candidates plus ancestors/descendants.
+   - Same-PGID peers need a lightweight allowlisted hint pass before full enrichment.
 
-Main remaining risks:
+3. Status still lacks match/RPC explanation.
+   - Verbose status shows identity data, but not selected presence source, match reason, match confidence, active Discord app ID, RPC state, or scan mode.
 
-1. Steam app ID propagation is incomplete in the new resolver path.
-   - The old `readProcHints` path parsed `AppId=...` and `steam://rungameid/...` from args.
-   - The production resolver needs that same behavior.
-   - `SteamCompatAppId` should be promoted as a Steam app ID candidate, not only a generic alias.
-   - Numeric aliases should either match `AliasSteamAppID` or stay in a dedicated Steam app ID field.
+4. Matcher scoring can be more deterministic.
+   - Alias confidence stored in catalog rows is not yet incorporated.
+   - Reason priority and stable final tie-breaks should be added.
 
-2. Process-group/session enrichment is still too broad.
-   - Ancestor/descendant relations are strong.
-   - Same process-group and especially same-session peers can include unrelated desktop apps.
-   - Gate broad peer enrichment behind shared Wine/Steam/Proton clues such as Steam app ID, `WINEPREFIX`, or `STEAM_COMPAT_DATA_PATH`.
-
-3. Wine/Windows path aliases need normalization.
-   - Args like `C:\Games\Game\Game.exe` should produce `Game.exe` and `Game`, not a full path-like alias.
-   - This is both a matching issue and a privacy/debug-output issue.
-
-4. Catalog matcher should pick the best-confidence match.
-   - Current ordering can return an earlier lower-confidence match before a stronger alias match.
-   - Steam app ID and strong aliases should win over generic process-name matches.
-
-5. User-facing debugging is still thin.
-   - `picord status` does not show aliases, Steam app ID, desktop ID, match reason, confidence, relation source, active app ID, RPC state, scan mode, or last scan time.
-   - `debug-processes` is useful but noisy; it needs filters and possibly JSON output.
+5. Profile matcher guardrails remain.
+   - Empty window-title or regex profiles can still be too broad.
+   - Equal-score tie behavior should be made explicit and stable.
 
 ## Next plan
 
-Detailed plan written at:
+Detailed follow-up plan:
 
-- `docs/plans/2026-04-30-post-kimi-wine-identity-stabilization.md`
+- `docs/plans/2026-04-30-post-stabilization-follow-up.md`
 
-Recommended execution order:
+Recommended next execution order:
 
-1. Steam app ID propagation and Steam-ID catalog matching.
-2. Relationship gating to avoid false positives from broad PGID/SID peers.
-3. Windows path alias normalization and alias privacy guardrails.
-4. Best-confidence catalog matcher.
-5. Verbose status and filtered debug-processes output.
-6. Preserve `scan_all_processes = false` privacy/performance semantics.
-7. Namespace/race hardening plus end-to-end synthetic identity-to-catalog tests.
+1. Relation-source aware alias propagation.
+2. `scan_all_processes=false` same-PGID peer enrichment without broad reads.
+3. Atomic scan snapshots and first-scan state.
+4. Match reason/confidence/status/RPC diagnostics.
+5. Catalog matcher reason priority and alias-confidence scoring.
+6. Profile matcher blank-value and tie guardrails.
+7. CLI/API robustness and manual Wine/Proton testing docs.
 
 ## Manual user-testing path
 
@@ -143,12 +138,6 @@ After building:
 
 ```bash
 make build
-```
-
-With Discord desktop running:
-
-```bash
-bin/picord debug-rpc-image --external-url <safe-image-url>
 ```
 
 Refresh local catalog data:
@@ -159,13 +148,20 @@ bin/picord catalog refresh --source steam_shortcuts
 bin/picord catalog refresh --source desktop
 ```
 
-Inspect process identity while launching a Steam, non-Steam, Wine, or Proton game:
+Launch a Steam, non-Steam, Wine, or Proton game, then inspect:
 
 ```bash
-bin/picord debug-processes
+bin/picord status --verbose
+bin/picord debug-processes --wine --with-aliases
+bin/picord debug-processes --name "<game>" --json
 ```
 
-Known caveat: before the next P0 pass, debug output may show useful aliases but matching can still miss some Proton/non-Steam games when the only strong signal is a command-line Steam app ID, `SteamCompatAppId`, or a Windows-style executable path.
+Expected healthy signs:
+
+- Last Scan is recent.
+- Steam/Proton game has a Steam App ID.
+- Wine/Proton carrier has a game basename alias, e.g. `Lethal Company.exe` and `Lethal Company`.
+- Debug JSON does not include `exe_path`, `cwd`, `args`, env values, or private full paths.
 
 ## Do not lose
 

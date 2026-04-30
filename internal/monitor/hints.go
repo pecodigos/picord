@@ -5,11 +5,14 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
-	"strconv"
 	"strings"
 )
 
-var steamAppIDRe = regexp.MustCompile(`(?i)(?:AppId=|steam://rungameid/)(\d+)`)
+var (
+	steamAppIDRe      = regexp.MustCompile(`(?i)(?:AppId=|steam://rungameid/|steam://run/)(\d+)`)
+	steamAppIDArgsRe  = regexp.MustCompile(`(?i)^--appid$`)
+	steamAppIDEnvKeys = []string{"SteamAppId", "SteamGameId", "SteamAppID", "SteamOverlayGameId", "SteamCompatAppId"}
+)
 
 // readProcHints collects game-identity hints from /proc/<pid> without exposing
 // the full environment. Only allowlisted env keys are returned.
@@ -36,27 +39,13 @@ func readProcHints(pid int, name string) (exePath, cwd string, args []string, st
 		}
 	}
 
-	// Steam AppID from cmdline tokens
-	for _, a := range args {
-		if m := steamAppIDRe.FindStringSubmatch(a); m != nil {
-			steamAppID = m[1]
-			break
-		}
-	}
-
 	// Environment allowlist
+	env := map[string]string{}
 	envData, err := os.ReadFile(filepath.Join(procPath, "environ"))
 	if err == nil {
-		env := parseEnvironAllowlist(envData, []string{
-			"SteamAppId", "SteamGameId", "SteamAppID", "SteamOverlayGameId",
-			"GIO_LAUNCHED_DESKTOP_FILE",
-		})
-		for _, key := range []string{"SteamAppId", "SteamGameId", "SteamAppID", "SteamOverlayGameId"} {
-			if v := env[key]; v != "" {
-				steamAppID = v
-				break
-			}
-		}
+		allowed := append([]string{}, steamAppIDEnvKeys...)
+		allowed = append(allowed, "GIO_LAUNCHED_DESKTOP_FILE")
+		env = parseEnvironAllowlist(envData, allowed)
 		if v := env["GIO_LAUNCHED_DESKTOP_FILE"]; v != "" {
 			desktopID = filepath.Base(v)
 			if strings.HasSuffix(desktopID, ".desktop") {
@@ -64,6 +53,7 @@ func readProcHints(pid int, name string) (exePath, cwd string, args []string, st
 			}
 		}
 	}
+	steamAppID = ExtractSteamAppID(args, env)
 
 	return exePath, cwd, args, steamAppID, desktopID
 }
@@ -91,6 +81,39 @@ func parseEnvironAllowlist(data []byte, allowed []string) map[string]string {
 
 // isPureNumber returns true if the string is all digits.
 func isPureNumber(s string) bool {
-	_, err := strconv.Atoi(s)
-	return err == nil
+	if s == "" {
+		return false
+	}
+	for _, r := range s {
+		if r < '0' || r > '9' {
+			return false
+		}
+	}
+	return true
+}
+
+// ExtractSteamAppID searches args and env hints for a Steam application ID.
+// It checks both command-line tokens and allowlisted environment variables.
+func ExtractSteamAppID(args []string, envHints map[string]string) string {
+	// 1. Search args for patterns like AppId=620, steam://rungameid/620, --appid 620
+	for i, a := range args {
+		if m := steamAppIDRe.FindStringSubmatch(a); m != nil {
+			return m[1]
+		}
+		// Check --appid <next-arg>
+		if steamAppIDArgsRe.MatchString(a) && i+1 < len(args) {
+			if v := args[i+1]; isPureNumber(v) {
+				return v
+			}
+		}
+	}
+
+	// 2. Search env hints in priority order
+	for _, key := range steamAppIDEnvKeys {
+		if v := envHints[key]; v != "" && isPureNumber(v) {
+			return v
+		}
+	}
+
+	return ""
 }

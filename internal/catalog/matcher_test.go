@@ -139,6 +139,167 @@ func TestMatcher_NoMatch(t *testing.T) {
 	}
 }
 
+func TestMatcher_NumericAliasAsSteamAppID(t *testing.T) {
+	dir := t.TempDir()
+	store, err := Open(filepath.Join(dir, "catalog.db"))
+	if err != nil {
+		t.Fatalf("Open failed: %v", err)
+	}
+	defer store.Close()
+
+	ctx := context.Background()
+	_ = store.UpsertEntry(ctx, Entry{
+		ID: "steam:620", Source: "steam", SourceID: "620", Kind: EntryKindGame,
+		Title: "Portal 2", NormalizedTitle: NormalizeTitle("Portal 2"),
+	}, []Alias{
+		{EntryID: "steam:620", Kind: AliasSteamAppID, Value: "620", Normalized: "620", Confidence: 100},
+	})
+
+	m := NewMatcher(store)
+	// Process with numeric alias but no explicit SteamAppID field
+	result := m.Match(ctx, profile.DetectedProcess{Name: "wine", Aliases: []string{"620", "portal2"}})
+	if result == nil {
+		t.Fatal("expected match from numeric alias as SteamAppID")
+	}
+	if result.Entry.Title != "Portal 2" {
+		t.Errorf("title=%q, want Portal 2", result.Entry.Title)
+	}
+	if result.Confidence != 95 {
+		t.Errorf("confidence=%d, want 95", result.Confidence)
+	}
+}
+
+func TestMatcher_RejectsSignedSteamAppIDs(t *testing.T) {
+	dir := t.TempDir()
+	store, err := Open(filepath.Join(dir, "catalog.db"))
+	if err != nil {
+		t.Fatalf("Open failed: %v", err)
+	}
+	defer store.Close()
+
+	ctx := context.Background()
+	_ = store.UpsertEntry(ctx, Entry{
+		ID: "steam:620", Source: "steam", SourceID: "620", Kind: EntryKindGame,
+		Title: "Portal 2", NormalizedTitle: NormalizeTitle("Portal 2"),
+	}, []Alias{
+		{EntryID: "steam:620", Kind: AliasSteamAppID, Value: "620", Normalized: "620", Confidence: 100},
+	})
+
+	m := NewMatcher(store)
+	for _, proc := range []profile.DetectedProcess{
+		{Name: "wine", SteamAppID: "+620"},
+		{Name: "wine", SteamAppID: "-620"},
+		{Name: "wine", Aliases: []string{"+620"}},
+		{Name: "wine", Aliases: []string{"-620"}},
+	} {
+		if got := m.Match(ctx, proc); got != nil {
+			t.Fatalf("expected no match for signed Steam AppID %+v, got %+v", proc, got)
+		}
+	}
+}
+
+func TestMatcher_EvaluatesAllAliasCandidatesForTieBreak(t *testing.T) {
+	dir := t.TempDir()
+	store, err := Open(filepath.Join(dir, "catalog.db"))
+	if err != nil {
+		t.Fatalf("Open failed: %v", err)
+	}
+	defer store.Close()
+
+	ctx := context.Background()
+	// Insert the lower-priority source first. The matcher must still consider the
+	// later Steam candidate instead of accepting SearchByAlias()[0].
+	_ = store.UpsertEntry(ctx, Entry{
+		ID: "desktop:portal2", Source: "desktop", SourceID: "portal2", Kind: EntryKindGame,
+		Title: "Portal 2 Launcher", NormalizedTitle: NormalizeTitle("Portal 2 Launcher"),
+	}, []Alias{
+		{EntryID: "desktop:portal2", Kind: AliasExecutable, Value: "portal2", Normalized: NormalizeTitle("portal2"), Confidence: 80},
+	})
+	_ = store.UpsertEntry(ctx, Entry{
+		ID: "steam:620", Source: "steam", SourceID: "620", Kind: EntryKindGame,
+		Title: "Portal 2", NormalizedTitle: NormalizeTitle("Portal 2"),
+	}, []Alias{
+		{EntryID: "steam:620", Kind: AliasExecutable, Value: "portal2", Normalized: NormalizeTitle("portal2"), Confidence: 80},
+	})
+
+	m := NewMatcher(store)
+	result := m.Match(ctx, profile.DetectedProcess{Name: "portal2"})
+	if result == nil {
+		t.Fatal("expected match")
+	}
+	if result.Entry.ID != "steam:620" {
+		t.Fatalf("expected Steam entry to win source-priority tie, got %+v", result.Entry)
+	}
+}
+
+func TestMatcher_AliasBeatsExecutable(t *testing.T) {
+	dir := t.TempDir()
+	store, err := Open(filepath.Join(dir, "catalog.db"))
+	if err != nil {
+		t.Fatalf("Open failed: %v", err)
+	}
+	defer store.Close()
+
+	ctx := context.Background()
+	// Entry A matches by executable at confidence 80
+	_ = store.UpsertEntry(ctx, Entry{
+		ID: "desktop:steam", Source: "desktop", SourceID: "steam", Kind: EntryKindApplication,
+		Title: "Steam", NormalizedTitle: NormalizeTitle("Steam"),
+	}, []Alias{
+		{EntryID: "desktop:steam", Kind: AliasExecutable, Value: "steam", Normalized: NormalizeTitle("steam"), Confidence: 70},
+	})
+	// Entry B matches by alias at confidence 85
+	_ = store.UpsertEntry(ctx, Entry{
+		ID: "steam:620", Source: "steam", SourceID: "620", Kind: EntryKindGame,
+		Title: "Portal 2", NormalizedTitle: NormalizeTitle("Portal 2"),
+	}, []Alias{
+		{EntryID: "steam:620", Kind: AliasExecutable, Value: "portal2", Normalized: NormalizeTitle("portal2"), Confidence: 85},
+	})
+
+	m := NewMatcher(store)
+	// Process name matches "steam" at 80, but alias "portal2" matches at 85
+	result := m.Match(ctx, profile.DetectedProcess{Name: "steam", Aliases: []string{"portal2"}})
+	if result == nil {
+		t.Fatal("expected match")
+	}
+	if result.Entry.Title != "Portal 2" {
+		t.Errorf("expected alias match to win, got title=%q", result.Entry.Title)
+	}
+	if result.Confidence != 85 {
+		t.Errorf("expected confidence=85, got %d", result.Confidence)
+	}
+}
+
+func TestMatcher_SteamAppIDBeatsAll(t *testing.T) {
+	dir := t.TempDir()
+	store, err := Open(filepath.Join(dir, "catalog.db"))
+	if err != nil {
+		t.Fatalf("Open failed: %v", err)
+	}
+	defer store.Close()
+
+	ctx := context.Background()
+	_ = store.UpsertEntry(ctx, Entry{
+		ID: "steam:620", Source: "steam", SourceID: "620", Kind: EntryKindGame,
+		Title: "Portal 2", NormalizedTitle: NormalizeTitle("Portal 2"),
+	}, []Alias{
+		{EntryID: "steam:620", Kind: AliasSteamAppID, Value: "620", Normalized: "620", Confidence: 100},
+		{EntryID: "steam:620", Kind: AliasExecutable, Value: "portal2", Normalized: NormalizeTitle("portal2"), Confidence: 85},
+	})
+
+	m := NewMatcher(store)
+	result := m.Match(ctx, profile.DetectedProcess{Name: "portal2", SteamAppID: "620", Aliases: []string{"portal2"}})
+	if result == nil {
+		t.Fatal("expected match")
+	}
+	if result.Confidence != 100 {
+		t.Errorf("expected SteamAppID confidence=100 to win, got %d", result.Confidence)
+	}
+	if result.Reason != "steam_app_id" {
+		t.Errorf("expected reason=steam_app_id, got %q", result.Reason)
+	}
+}
+
 func TestMatchResult_ToProfile(t *testing.T) {
 	mr := &MatchResult{
 		Entry: Entry{

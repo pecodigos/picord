@@ -2,6 +2,8 @@
 
 Date: 2026-04-30
 Branch: `master`
+Status: Implemented. A follow-up audit/plan now lives at `docs/plans/2026-04-30-post-stabilization-follow-up.md`.
+
 Baseline commits reviewed:
 - `373c083 feat: add Wine Proton process identity aliases`
 - `aae3557 fix: allow Steam shortcuts catalog refresh`

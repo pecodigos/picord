@@ -334,3 +334,53 @@ func TestSecurity_GETWithoutTokenAllowed(t *testing.T) {
 		t.Errorf("expected GET without token to be allowed, got 403")
 	}
 }
+
+func TestHandleStatusVerboseGatesIdentityFields(t *testing.T) {
+	state := NewAppState()
+	state.SetDetected([]profile.DetectedProcess{{
+		PID:        123,
+		Name:       "wine",
+		SteamAppID: "620",
+		DesktopID:  "portal2.desktop",
+		Aliases:    []string{"Portal 2", "portal2.exe"},
+		ExePath:    "/home/user/private/portal2.exe",
+		Cwd:        "/home/user/private",
+		Args:       []string{"portal2.exe", "--token=secret"},
+	}})
+	srv := New(state, profile.NewManager(nil, nil), nil)
+
+	for _, tc := range []struct {
+		name    string
+		url     string
+		verbose bool
+	}{
+		{name: "default", url: "/api/status", verbose: false},
+		{name: "verbose", url: "/api/status?verbose=1", verbose: true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			req := httptest.NewRequest(http.MethodGet, tc.url, nil)
+			rr := httptest.NewRecorder()
+			srv.handleStatus(rr, req)
+			if rr.Code != http.StatusOK {
+				t.Fatalf("expected 200, got %d: %s", rr.Code, rr.Body.String())
+			}
+			var resp statusResponse
+			if err := json.Unmarshal(rr.Body.Bytes(), &resp); err != nil {
+				t.Fatalf("decode: %v", err)
+			}
+			if len(resp.DetectedProcs) != 1 {
+				t.Fatalf("expected 1 process, got %d", len(resp.DetectedProcs))
+			}
+			proc := resp.DetectedProcs[0]
+			if got := len(proc.Aliases) > 0 || proc.SteamAppID != "" || proc.DesktopID != ""; got != tc.verbose {
+				t.Fatalf("verbose fields present=%v, want %v: %+v", got, tc.verbose, proc)
+			}
+			body := rr.Body.String()
+			for _, secret := range []string{"exe_path", "cwd", "args", "/home/user/private", "--token=secret"} {
+				if bytes.Contains([]byte(body), []byte(secret)) {
+					t.Fatalf("status response leaked %q: %s", secret, body)
+				}
+			}
+		})
+	}
+}

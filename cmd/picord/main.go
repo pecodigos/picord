@@ -306,6 +306,7 @@ func runDaemon(debug bool) int {
 
 	procMonitor := monitor.NewWithOptions(cfg.PollInterval, cfg.ScanAllProcesses, func(procs []profile.DetectedProcess) {
 		state.SetDetected(procs)
+		state.SetLastScanTime(time.Now().Format(time.RFC3339))
 
 		if state.HasOverride() || !state.AutoDetectEnabled() {
 			return

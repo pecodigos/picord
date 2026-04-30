@@ -5,6 +5,7 @@ import (
 	"log"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"time"
 
@@ -82,22 +83,56 @@ func scan() []profile.DetectedProcess {
 }
 
 func scanProcesses(scanAll bool) []profile.DetectedProcess {
-	// Use the new identity resolver which builds a full /proc table,
-	// enriches Wine/Proton carriers with aliases, and returns DetectedProcesses.
-	processes := ResolveProcessIdentities()
-
-	if !scanAll {
-		// Legacy mode: only include processes with Discord IPC connections
-		var filtered []profile.DetectedProcess
-		for _, p := range processes {
-			if processHasDiscordIPC(fmt.Sprintf("%d", p.PID)) {
-				filtered = append(filtered, p)
-			}
-		}
-		return filtered
+	if scanAll {
+		// Full resolver path: read expensive data for all processes.
+		processes := ResolveProcessIdentities()
+		return processes
 	}
 
-	return processes
+	// Candidate-first path: find Discord IPC processes, then only read
+	// expensive env/cmdline/exe/cwd data for those candidates and their
+	// related processes (ancestors/descendants for Wine/Proton enrichment).
+	ipcPIDs := findDiscordIPCPIDs()
+	if len(ipcPIDs) == 0 {
+		return nil
+	}
+	processes := ResolveProcessIdentitiesLite(ipcPIDs)
+
+	// Filter to only IPC candidates in the final output.
+	ipcSet := make(map[int]bool, len(ipcPIDs))
+	for _, pid := range ipcPIDs {
+		ipcSet[pid] = true
+	}
+	var filtered []profile.DetectedProcess
+	for _, p := range processes {
+		if ipcSet[p.PID] {
+			filtered = append(filtered, p)
+		}
+	}
+	return filtered
+}
+
+// findDiscordIPCPIDs returns PIDs that have an open discord-ipc fd.
+func findDiscordIPCPIDs() []int {
+	entries, err := os.ReadDir(procRoot)
+	if err != nil {
+		return nil
+	}
+
+	var pids []int
+	for _, entry := range entries {
+		if !entry.IsDir() {
+			continue
+		}
+		pid, err := strconv.Atoi(entry.Name())
+		if err != nil {
+			continue
+		}
+		if processHasDiscordIPC(entry.Name()) {
+			pids = append(pids, pid)
+		}
+	}
+	return pids
 }
 
 func processHasDiscordIPC(entry string) bool {
