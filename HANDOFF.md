@@ -15,37 +15,48 @@ Picord is still targeting the user's Discord application:
 
 - Repository: `/mnt/hdd/Code/2026/picord`
 - Branch: `master`
-- Local branch is ahead of `origin/master` by 2 commits at this handoff:
-  - `bdc40e4 fix: make tray autostart explicit and remove web UI`
-  - `686999d docs: remove web UI references`
+- Local branch is ahead of `origin/master` by 6 commits at this handoff:
+  - `1b54cf3 fix: use desktop autostart for tray startup`
+  - `911ebb1 fix: prevent settings from disabling tray access`
+  - `760437f test: cover tray startup flags`
+  - `55051fb refactor: rename web port to local api port`
+  - `27f89de test: assert removed web ui stays removed`
+  - `8aa35e5 docs: document tray-first startup workflow and add auto-detect CLI`
 
 Push after the next successful implementation batch, unless the user asks otherwise.
 
-## What changed in the latest iteration
+## What changed in the latest iteration (2026-04-30 DeepSeek V4 Pro)
 
-### Tray startup and Web UI removal
+### Startup mechanism (P0.1)
+- GTK Settings dialog now manages `~/.config/autostart/picord.desktop` (desktop autostart) instead of `systemctl --user enable picord.service`.
+- Checkbox label changed from "Launch on login (systemd service)" → "Launch on login (desktop autostart)".
+- Desktop entry content is embedded in the settings package as a constant.
+- `resources/picord.service` updated: uses `picord run --tray`, removed brittle `DISPLAY`/`WAYLAND_DISPLAY` env assumptions. Marked as advanced/headless in README.
 
-- `picord run` now supports tray flags:
-  - `picord run --tray`
-  - `picord run --no-tray`
-- No-argument `picord` still runs the daemon using config defaults.
-- `resources/picord.desktop` now uses `Exec=picord run` and includes `X-GNOME-Autostart-Delay=5`.
-- Tray menu no longer includes `Open Web GUI`.
-- Removed Web UI code and assets:
-  - `internal/server/web/index.html`
-  - `internal/server/web/css/style.css`
-  - `internal/server/web/js/api.js`
-  - `internal/server/web/js/app.js`
-- `internal/server/server.go` no longer embeds or serves browser UI assets.
-- Root HTTP path `/` now returns JSON 404: `Picord API: use /api/status or the picord CLI`.
-- Server startup log now says `Picord API: http://...`, not Web GUI.
-- README now describes GTK Settings/tray/CLI/YAML workflows instead of a browser Web UI.
+### Tray access safety (P0.2)
+- Removed "Show icon in system tray" checkbox from Settings dialog (was the only graphical config path after Web UI removal).
+- Replaced with explanatory label: "System tray icon is always shown. Headless mode: picord run --no-tray".
+- Config field `show_tray_icon` preserved for backward compatibility.
+- Added config tests for both legacy `show_tray_icon: false` and default `show_tray_icon: true`.
 
-### Important caveat
+### Tray flag testing (P1.1)
+- Extracted `parseRunFlags()` helper from `cmdRun()` for testability.
+- Added 5 tests covering: default, `--tray`, `--no-tray`, `--no-tray` overriding `--tray`, and `--tray=false`.
 
-`resources/picord.service` and the GTK Settings dialog startup toggle still need follow-up work. The dialog currently labels startup as `Launch on login (systemd service)` and manages `systemctl --user enable/disable picord.service`. That may still be the cause of the boot-time no-tray behavior because systemd user services can run without a ready StatusNotifier/tray environment.
+### Port naming (P1.2)
+- Renamed config key `web_port` → `api_port` (yaml + json tags).
+- Backward compat in `Load()`: old `web_port` key is mapped to the new `api_port` field when no `api_port` is present.
+- `api_port` takes precedence when both keys exist.
+- Updated log messages and README references.
+- Added backward-compat and precedence config tests.
 
-The next plan prioritizes fixing that.
+### Web UI removal tests (P1.3)
+- Added `TestRootReturnsJSON404NotHTML`: asserts `GET /` returns HTTP 404, `Content-Type: application/json`, and body contains no HTML tags.
+- Cleaned up "browser-facing" comment in settings API code.
+
+### Documentation + CLI parity (P2)
+- README autostart section: desktop autostart moved to recommended position, systemd marked as advanced/headless, verification steps added.
+- Added `picord auto-detect [on|off]` CLI command (fills the only parity gap with removed Web UI).
 
 ## Current implementation snapshot
 
@@ -126,18 +137,11 @@ make build
 
 `make build` produced ignored `bin/picord`.
 
-## Next iteration plan for DeepSeek V4 Pro
+## Completed plan
 
 Plan file:
 
-- `docs/plans/2026-04-30-deepseek-v4-pro-next-iteration.md`
-
-Highest-priority items:
-
-1. Fix startup mechanism so login startup reliably creates a tray icon in a graphical desktop session.
-2. Prevent the Settings UI/config from accidentally disabling the only graphical configuration path.
-3. Add tests for `picord run --tray` / `--no-tray` behavior.
-4. Keep removing stale Web UI wording and add a test that `/` does not serve HTML.
+- `docs/plans/2026-04-30-deepseek-v4-pro-next-iteration.md` — **IMPLEMENTED**
 
 ## Manual user-testing path
 
@@ -177,13 +181,14 @@ bin/picord debug-processes --name "<game>" --json
 
 ## Main remaining risks / next steps
 
-1. **Boot-time tray reliability**
-   - Desktop autostart was improved, but `resources/picord.service` and the Settings dialog still need alignment.
-   - Prefer desktop autostart for graphical tray access unless a systemd user unit is proven reliable in the user's session.
+1. **Boot-time tray reliability** ✅ RESOLVED
+   - Settings dialog now manages desktop autostart (`~/.config/autostart/picord.desktop`).
+   - `resources/picord.service` updated to use `picord run --tray` without brittle env assumptions.
+   - README positions desktop autostart as recommended for tray access.
 
-2. **Tray can still be disabled by config**
-   - With Web UI removed, disabling tray removes the only graphical settings path.
-   - Next iteration should make this safer or advanced-only.
+2. **Tray can still be disabled by config** ✅ RESOLVED
+   - "Show icon in system tray" checkbox removed from Settings dialog.
+   - Headless mode available via `picord run --no-tray` only.
 
 3. **Emulator title extraction live validation**
    - Needs real-world testing with actual emulators to verify window title formats match.
