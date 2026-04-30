@@ -11,11 +11,35 @@ func TestDefaultProfiles_ReturnsNonEmpty(t *testing.T) {
 	}
 }
 
-func TestDefaultProfiles_AllEnabled(t *testing.T) {
+func TestDefaultProfiles_GamesEnabled(t *testing.T) {
 	defaults := DefaultProfiles()
 	for _, p := range defaults {
-		if !p.Enabled {
-			t.Errorf("expected default profile %q to be enabled", p.Name)
+		if p.Name == "Factorio" || p.Name == "Stardew Valley" || p.Name == "Hollow Knight" {
+			if !p.Enabled {
+				t.Errorf("expected game profile %q to be enabled", p.Name)
+			}
+		}
+	}
+}
+
+func TestDefaultProfiles_DesktopAppsDisabled(t *testing.T) {
+	defaults := DefaultProfiles()
+	for _, p := range defaults {
+		if p.Name == "Firefox" || p.Name == "Discord" || p.Name == "VSCode" || p.Name == "Spotify" {
+			if p.Enabled {
+				t.Errorf("expected desktop app profile %q to be disabled", p.Name)
+			}
+		}
+	}
+}
+
+func TestDefaultProfiles_SoftwareForGamesEnabled(t *testing.T) {
+	defaults := DefaultProfiles()
+	for _, p := range defaults {
+		if p.Name == "Steam" || p.Name == "Dolphin Emulator" || p.Name == "PCSX2" || p.Name == "Wine" {
+			if !p.Enabled {
+				t.Errorf("expected software-for-games profile %q to be enabled", p.Name)
+			}
 		}
 	}
 }
@@ -39,20 +63,25 @@ func TestDefaultProfiles_ContainsSteam(t *testing.T) {
 	}
 }
 
-func TestNewManager_DefaultsEnabled(t *testing.T) {
+func TestNewManager_DefaultsRespectEnabled(t *testing.T) {
 	defaults := DefaultProfiles()
 	m := NewManager(nil, defaults)
 	all := m.All()
-	if len(all) != len(defaults) {
-		t.Fatalf("expected %d profiles, got %d", len(defaults), len(all))
+	if len(all) == 0 {
+		t.Fatal("expected some active profiles")
 	}
 	for _, p := range all {
-		if !p.Enabled {
-			t.Errorf("expected profile %q to be enabled", p.Name)
-		}
 		if !p.IsDefault() {
 			t.Errorf("expected profile %q to be marked as default", p.Name)
 		}
+	}
+	// Ensure at least one desktop app is NOT in the active list.
+	if m.Get("Firefox") != nil {
+		t.Error("expected Firefox to be excluded from active defaults")
+	}
+	// Ensure Steam IS in the active list.
+	if m.Get("Steam") == nil {
+		t.Error("expected Steam to be included in active defaults")
 	}
 }
 

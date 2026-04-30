@@ -1,256 +1,4 @@
-- name: "RetroArch"
-  match:
-    type: process_name
-    value: "retroarch"
-  activity:
-    details: "Playing retro games"
-    state: "RetroArch"
-    large_image: "retroarch"
-    large_text: "RetroArch"
-  priority: 10
-
-- name: "Dolphin Emulator"
-  match:
-    type: process_name
-    value: "dolphin-emu"
-  activity:
-    details: "Playing GameCube / Wii"
-    state: "Dolphin Emulator"
-    large_image: "dolphin"
-    large_text: "Dolphin"
-  priority: 10
-
-- name: "PCSX2"
-  match:
-    type: process_name
-    value: "pcsx2"
-  activity:
-    details: "Playing PlayStation 2"
-    state: "PCSX2"
-    large_image: "pcsx2"
-    large_text: "PCSX2"
-  priority: 10
-
-- name: "RPCS3"
-  match:
-    type: process_name
-    value: "rpcs3"
-  activity:
-    details: "Playing PlayStation 3"
-    state: "RPCS3"
-    large_image: "rpcs3"
-    large_text: "RPCS3"
-  priority: 10
-
-- name: "DuckStation"
-  match:
-    type: process_name
-    value: "duckstation"
-  activity:
-    details: "Playing PlayStation 1"
-    state: "DuckStation"
-    large_image: "duckstation"
-    large_text: "DuckStation"
-  priority: 10
-
-- name: "PPSSPP"
-  match:
-    type: process_name
-    value: "ppsspp"
-  activity:
-    details: "Playing PSP games"
-    state: "PPSSPP"
-    large_image: "ppsspp"
-    large_text: "PPSSPP"
-  priority: 10
-
-- name: "Yuzu"
-  match:
-    type: process_name
-    value: "yuzu"
-  activity:
-    details: "Playing Nintendo Switch"
-    state: "Yuzu"
-    large_image: "yuzu"
-    large_text: "Yuzu"
-  priority: 10
-
-- name: "Citra"
-  match:
-    type: process_name
-    value: "citra"
-  activity:
-    details: "Playing Nintendo 3DS"
-    state: "Citra"
-    large_image: "citra"
-    large_text: "Citra"
-  priority: 10
-
-- name: "Cemu"
-  match:
-    type: process_name
-    value: "cemu"
-  activity:
-    details: "Playing Wii U"
-    state: "Cemu"
-    large_image: "cemu"
-    large_text: "Cemu"
-  priority: 10
-
-- name: "MAME"
-  match:
-    type: process_name
-    value: "mame"
-  activity:
-    details: "Playing arcade games"
-    state: "MAME"
-    large_image: "mame"
-    large_text: "MAME"
-  priority: 10
-
-- name: "Xemu"
-  match:
-    type: process_name
-    value: "xemu"
-  activity:
-    details: "Playing Original Xbox"
-    state: "Xemu"
-    large_image: "xemu"
-    large_text: "Xemu"
-  priority: 10
-
-- name: "Flycast"
-  match:
-    type: process_name
-    value: "flycast"
-  activity:
-    details: "Playing Dreamcast"
-    state: "Flycast"
-    large_image: "flycast"
-    large_text: "Flycast"
-  priority: 10
-
-- name: "Steam"
-  match:
-    type: process_name
-    value: "steam"
-  activity:
-    details: "In Steam"
-    state: "Browsing library"
-    large_image: "steam"
-    large_text: "Steam"
-  priority: 5
-
-- name: "Lutris"
-  match:
-    type: process_name
-    value: "lutris"
-  activity:
-    details: "Gaming on Linux"
-    state: "Lutris"
-    large_image: "lutris"
-    large_text: "Lutris"
-  priority: 5
-
-- name: "Heroic Games Launcher"
-  match:
-    type: process_name
-    value: "heroic"
-  activity:
-    details: "Playing games"
-    state: "Heroic Games Launcher"
-    large_image: "heroic"
-    large_text: "Heroic"
-  priority: 5
-
-- name: "Minecraft"
-  match:
-    type: process_name
-    value: "java"
-  activity:
-    details: "Playing Minecraft"
-    state: "In game"
-    large_image: "minecraft"
-    large_text: "Minecraft"
-  priority: 7
-
-- name: "Prism Launcher"
-  match:
-    type: process_name
-    value: "prismlauncher"
-  activity:
-    details: "Playing Minecraft"
-    state: "Prism Launcher"
-    large_image: "minecraft"
-    large_text: "Minecraft"
-  priority: 8
-
-- name: "MultiMC"
-  match:
-    type: process_name
-    value: "multimc"
-  activity:
-    details: "Playing Minecraft"
-    state: "MultiMC"
-    large_image: "minecraft"
-    large_text: "Minecraft"
-  priority: 8
-
-- name: "GZDoom"
-  match:
-    type: process_name
-    value: "gzdoom"
-  activity:
-    details: "Ripping and tearing"
-    state: "GZDoom"
-    large_image: "gzdoom"
-    large_text: "GZDoom"
-  priority: 10
-
-- name: "OpenMW"
-  match:
-    type: process_name
-    value: "openmw"
-  activity:
-    details: "Exploring Morrowind"
-    state: "OpenMW"
-    large_image: "openmw"
-    large_text: "OpenMW"
-  priority: 10
-
-- name: "OpenRA"
-  match:
-    type: process_name
-    value: "openra"
-  activity:
-    details: "Command & Conquer"
-    state: "OpenRA"
-    large_image: "openra"
-    large_text: "OpenRA"
-  priority: 10
-
-- name: "OpenTTD"
-  match:
-    type: process_name
-    value: "openttd"
-  activity:
-    details: "Building transport empires"
-    state: "OpenTTD"
-    large_image: "openttd"
-    large_text: "OpenTTD"
-  priority: 10
-
-- name: "OpenRCT2"
-  match:
-    type: process_name
-    value: "openrct2"
-  activity:
-    details: "Building rollercoasters"
-    state: "OpenRCT2"
-    large_image: "openrct2"
-    large_text: "OpenRCT2"
-  priority: 10
-
+# === GAMES (enabled by default) ===
 - name: "Factorio"
   match:
     type: process_name
@@ -258,9 +6,10 @@
   activity:
     details: "The factory must grow"
     state: "Factorio"
-    large_image: "factorio"
+    large_image: "picord_game"
     large_text: "Factorio"
   priority: 10
+  enabled: true
 
 - name: "Dwarf Fortress"
   match:
@@ -269,9 +18,10 @@
   activity:
     details: "Losing is fun"
     state: "Dwarf Fortress"
-    large_image: "dwarf_fortress"
+    large_image: "picord_game"
     large_text: "Dwarf Fortress"
   priority: 10
+  enabled: true
 
 - name: "Stardew Valley"
   match:
@@ -280,9 +30,10 @@
   activity:
     details: "Farming and friendship"
     state: "Stardew Valley"
-    large_image: "stardew_valley"
+    large_image: "picord_game"
     large_text: "Stardew Valley"
   priority: 10
+  enabled: true
 
 - name: "Terraria"
   match:
@@ -291,9 +42,10 @@
   activity:
     details: "Digging and building"
     state: "Terraria"
-    large_image: "terraria"
+    large_image: "picord_game"
     large_text: "Terraria"
   priority: 10
+  enabled: true
 
 - name: "Celeste"
   match:
@@ -302,9 +54,10 @@
   activity:
     details: "Climbing the mountain"
     state: "Celeste"
-    large_image: "celeste"
+    large_image: "picord_game"
     large_text: "Celeste"
   priority: 10
+  enabled: true
 
 - name: "Hollow Knight"
   match:
@@ -313,9 +66,10 @@
   activity:
     details: "Exploring Hallownest"
     state: "Hollow Knight"
-    large_image: "hollow_knight"
+    large_image: "picord_game"
     large_text: "Hollow Knight"
   priority: 10
+  enabled: true
 
 - name: "Dead Cells"
   match:
@@ -324,207 +78,22 @@
   activity:
     details: "Die, learn, repeat"
     state: "Dead Cells"
-    large_image: "dead_cells"
+    large_image: "picord_game"
     large_text: "Dead Cells"
   priority: 10
+  enabled: true
 
-- name: "VSCode"
+- name: "Minecraft"
   match:
     type: process_name
-    value: "code"
+    value: "java"
   activity:
-    details: "Writing code"
-    state: "Visual Studio Code"
-    large_image: "vscode"
-    large_text: "VSCode"
-  priority: 3
-
-- name: "VSCodium"
-  match:
-    type: process_name
-    value: "codium"
-  activity:
-    details: "Writing code"
-    state: "VSCodium"
-    large_image: "vscode"
-    large_text: "VSCodium"
-  priority: 3
-
-- name: "IntelliJ IDEA"
-  match:
-    type: process_name
-    value: "idea"
-  activity:
-    details: "Developing software"
-    state: "IntelliJ IDEA"
-    large_image: "intellij"
-    large_text: "IntelliJ IDEA"
-  priority: 3
-
-- name: "PyCharm"
-  match:
-    type: process_name
-    value: "pycharm"
-  activity:
-    details: "Writing Python"
-    state: "PyCharm"
-    large_image: "pycharm"
-    large_text: "PyCharm"
-  priority: 3
-
-- name: "GoLand"
-  match:
-    type: process_name
-    value: "goland"
-  activity:
-    details: "Writing Go"
-    state: "GoLand"
-    large_image: "goland"
-    large_text: "GoLand"
-  priority: 3
-
-- name: "Spotify"
-  match:
-    type: process_name
-    value: "spotify"
-  activity:
-    details: "Listening to music"
-    state: "Spotify"
-    large_image: "spotify"
-    large_text: "Spotify"
-  priority: 2
-
-- name: "VLC"
-  match:
-    type: process_name
-    value: "vlc"
-  activity:
-    details: "Watching media"
-    state: "VLC Media Player"
-    large_image: "vlc"
-    large_text: "VLC"
-  priority: 2
-
-- name: "mpv"
-  match:
-    type: process_name
-    value: "mpv"
-  activity:
-    details: "Watching media"
-    state: "mpv"
-    large_image: "mpv"
-    large_text: "mpv"
-  priority: 2
-
-- name: "Firefox"
-  match:
-    type: process_name
-    value: "firefox"
-  activity:
-    details: "Browsing the web"
-    state: "Firefox"
-    large_image: "firefox"
-    large_text: "Firefox"
-  priority: 1
-
-- name: "Chromium"
-  match:
-    type: process_name
-    value: "chromium"
-  activity:
-    details: "Browsing the web"
-    state: "Chromium"
-    large_image: "chromium"
-    large_text: "Chromium"
-  priority: 1
-
-- name: "OBS Studio"
-  match:
-    type: process_name
-    value: "obs"
-  activity:
-    details: "Streaming / Recording"
-    state: "OBS Studio"
-    large_image: "obs"
-    large_text: "OBS Studio"
-  priority: 5
-
-- name: "Blender"
-  match:
-    type: process_name
-    value: "blender"
-  activity:
-    details: "Creating 3D art"
-    state: "Blender"
-    large_image: "blender"
-    large_text: "Blender"
-  priority: 3
-
-- name: "Krita"
-  match:
-    type: process_name
-    value: "krita"
-  activity:
-    details: "Drawing and painting"
-    state: "Krita"
-    large_image: "krita"
-    large_text: "Krita"
-  priority: 3
-
-- name: "Godot Engine"
-  match:
-    type: process_name
-    value: "godot"
-  activity:
-    details: "Making games"
-    state: "Godot Engine"
-    large_image: "godot"
-    large_text: "Godot"
-  priority: 5
-
-- name: "Unity Editor"
-  match:
-    type: process_name
-    value: "unity"
-  activity:
-    details: "Making games"
-    state: "Unity Editor"
-    large_image: "unity"
-    large_text: "Unity"
-  priority: 5
-
-- name: "Wine"
-  match:
-    type: process_name
-    value: "wine"
-  activity:
-    details: "Running Windows apps"
-    state: "Wine"
-    large_image: "wine"
-    large_text: "Wine"
-  priority: 2
-
-- name: "Proton"
-  match:
-    type: process_name
-    value: "proton"
-  activity:
-    details: "Playing Windows games"
-    state: "Proton"
-    large_image: "proton"
-    large_text: "Proton"
-  priority: 2
-
-- name: "Discord"
-  match:
-    type: process_name
-    value: "discord"
-  activity:
-    details: "Chatting on Discord"
-    state: "Discord"
-    large_image: "discord"
-    large_text: "Discord"
-  priority: 1
+    details: "Playing Minecraft"
+    state: "In game"
+    large_image: "picord_game"
+    large_text: "Minecraft"
+  priority: 7
+  enabled: true
 
 - name: "RuneLite"
   match:
@@ -533,9 +102,10 @@
   activity:
     details: "Playing Old School RuneScape"
     state: "RuneLite"
-    large_image: "runelite"
+    large_image: "picord_game"
     large_text: "RuneLite"
   priority: 10
+  enabled: true
 
 - name: "osu!"
   match:
@@ -544,6 +114,492 @@
   activity:
     details: "Clicking circles"
     state: "osu!"
-    large_image: "osu"
+    large_image: "picord_game"
     large_text: "osu!"
   priority: 10
+  enabled: true
+
+# === SOFTWARE FOR GAMES — Emulators (enabled by default) ===
+- name: "RetroArch"
+  match:
+    type: process_name
+    value: "retroarch"
+  activity:
+    details: "Playing retro games"
+    state: "RetroArch"
+    large_image: "picord_emulator"
+    large_text: "RetroArch"
+  priority: 10
+  enabled: true
+
+- name: "Dolphin Emulator"
+  match:
+    type: process_name
+    value: "dolphin-emu"
+  activity:
+    details: "Playing GameCube / Wii"
+    state: "Dolphin Emulator"
+    large_image: "picord_emulator"
+    large_text: "Dolphin"
+  priority: 10
+  enabled: true
+
+- name: "PCSX2"
+  match:
+    type: process_name
+    value: "pcsx2"
+  activity:
+    details: "Playing PlayStation 2"
+    state: "PCSX2"
+    large_image: "picord_emulator"
+    large_text: "PCSX2"
+  priority: 10
+  enabled: true
+
+- name: "RPCS3"
+  match:
+    type: process_name
+    value: "rpcs3"
+  activity:
+    details: "Playing PlayStation 3"
+    state: "RPCS3"
+    large_image: "picord_emulator"
+    large_text: "RPCS3"
+  priority: 10
+  enabled: true
+
+- name: "DuckStation"
+  match:
+    type: process_name
+    value: "duckstation"
+  activity:
+    details: "Playing PlayStation 1"
+    state: "DuckStation"
+    large_image: "picord_emulator"
+    large_text: "DuckStation"
+  priority: 10
+  enabled: true
+
+- name: "PPSSPP"
+  match:
+    type: process_name
+    value: "ppsspp"
+  activity:
+    details: "Playing PSP games"
+    state: "PPSSPP"
+    large_image: "picord_emulator"
+    large_text: "PPSSPP"
+  priority: 10
+  enabled: true
+
+- name: "Yuzu"
+  match:
+    type: process_name
+    value: "yuzu"
+  activity:
+    details: "Playing Nintendo Switch"
+    state: "Yuzu"
+    large_image: "picord_emulator"
+    large_text: "Yuzu"
+  priority: 10
+  enabled: true
+
+- name: "Citra"
+  match:
+    type: process_name
+    value: "citra"
+  activity:
+    details: "Playing Nintendo 3DS"
+    state: "Citra"
+    large_image: "picord_emulator"
+    large_text: "Citra"
+  priority: 10
+  enabled: true
+
+- name: "Cemu"
+  match:
+    type: process_name
+    value: "cemu"
+  activity:
+    details: "Playing Wii U"
+    state: "Cemu"
+    large_image: "picord_emulator"
+    large_text: "Cemu"
+  priority: 10
+  enabled: true
+
+- name: "MAME"
+  match:
+    type: process_name
+    value: "mame"
+  activity:
+    details: "Playing arcade games"
+    state: "MAME"
+    large_image: "picord_emulator"
+    large_text: "MAME"
+  priority: 10
+  enabled: true
+
+- name: "Xemu"
+  match:
+    type: process_name
+    value: "xemu"
+  activity:
+    details: "Playing Original Xbox"
+    state: "Xemu"
+    large_image: "picord_emulator"
+    large_text: "Xemu"
+  priority: 10
+  enabled: true
+
+- name: "Flycast"
+  match:
+    type: process_name
+    value: "flycast"
+  activity:
+    details: "Playing Dreamcast"
+    state: "Flycast"
+    large_image: "picord_emulator"
+    large_text: "Flycast"
+  priority: 10
+  enabled: true
+
+# === SOFTWARE FOR GAMES — Source Ports (enabled by default) ===
+- name: "GZDoom"
+  match:
+    type: process_name
+    value: "gzdoom"
+  activity:
+    details: "Ripping and tearing"
+    state: "GZDoom"
+    large_image: "picord_sourceport"
+    large_text: "GZDoom"
+  priority: 10
+  enabled: true
+
+- name: "OpenMW"
+  match:
+    type: process_name
+    value: "openmw"
+  activity:
+    details: "Exploring Morrowind"
+    state: "OpenMW"
+    large_image: "picord_sourceport"
+    large_text: "OpenMW"
+  priority: 10
+  enabled: true
+
+- name: "OpenRA"
+  match:
+    type: process_name
+    value: "openra"
+  activity:
+    details: "Command & Conquer"
+    state: "OpenRA"
+    large_image: "picord_sourceport"
+    large_text: "OpenRA"
+  priority: 10
+  enabled: true
+
+- name: "OpenTTD"
+  match:
+    type: process_name
+    value: "openttd"
+  activity:
+    details: "Building transport empires"
+    state: "OpenTTD"
+    large_image: "picord_sourceport"
+    large_text: "OpenTTD"
+  priority: 10
+  enabled: true
+
+- name: "OpenRCT2"
+  match:
+    type: process_name
+    value: "openrct2"
+  activity:
+    details: "Building rollercoasters"
+    state: "OpenRCT2"
+    large_image: "picord_sourceport"
+    large_text: "OpenRCT2"
+  priority: 10
+  enabled: true
+
+# === SOFTWARE FOR GAMES — Launchers (enabled by default) ===
+- name: "Steam"
+  match:
+    type: process_name
+    value: "steam"
+  activity:
+    details: "In Steam"
+    state: "Browsing library"
+    large_image: "picord_launcher"
+    large_text: "Steam"
+  priority: 5
+  enabled: true
+
+- name: "Lutris"
+  match:
+    type: process_name
+    value: "lutris"
+  activity:
+    details: "Gaming on Linux"
+    state: "Lutris"
+    large_image: "picord_launcher"
+    large_text: "Lutris"
+  priority: 5
+  enabled: true
+
+- name: "Heroic Games Launcher"
+  match:
+    type: process_name
+    value: "heroic"
+  activity:
+    details: "Playing games"
+    state: "Heroic Games Launcher"
+    large_image: "picord_launcher"
+    large_text: "Heroic"
+  priority: 5
+  enabled: true
+
+- name: "Prism Launcher"
+  match:
+    type: process_name
+    value: "prismlauncher"
+  activity:
+    details: "Playing Minecraft"
+    state: "Prism Launcher"
+    large_image: "picord_launcher"
+    large_text: "Prism Launcher"
+  priority: 8
+  enabled: true
+
+- name: "MultiMC"
+  match:
+    type: process_name
+    value: "multimc"
+  activity:
+    details: "Playing Minecraft"
+    state: "MultiMC"
+    large_image: "picord_launcher"
+    large_text: "MultiMC"
+  priority: 8
+  enabled: true
+
+# === SOFTWARE FOR GAMES — Compatibility / Engines (enabled by default) ===
+- name: "Wine"
+  match:
+    type: process_name
+    value: "wine"
+  activity:
+    details: "Running Windows apps"
+    state: "Wine"
+    large_image: "picord_wine"
+    large_text: "Wine"
+  priority: 2
+  enabled: true
+
+- name: "Proton"
+  match:
+    type: process_name
+    value: "proton"
+  activity:
+    details: "Playing Windows games"
+    state: "Proton"
+    large_image: "picord_wine"
+    large_text: "Proton"
+  priority: 2
+  enabled: true
+
+- name: "Godot Engine"
+  match:
+    type: process_name
+    value: "godot"
+  activity:
+    details: "Making games"
+    state: "Godot Engine"
+    large_image: "picord_engine"
+    large_text: "Godot"
+  priority: 5
+  enabled: true
+
+- name: "Unity Editor"
+  match:
+    type: process_name
+    value: "unity"
+  activity:
+    details: "Making games"
+    state: "Unity Editor"
+    large_image: "picord_engine"
+    large_text: "Unity"
+  priority: 5
+  enabled: true
+
+# === DESKTOP APPS (disabled by default — not tracked) ===
+- name: "Firefox"
+  match:
+    type: process_name
+    value: "firefox"
+  activity:
+    details: "Browsing the web"
+    state: "Firefox"
+    large_image: "picord_browser"
+    large_text: "Firefox"
+  priority: 1
+  enabled: false
+
+- name: "Chromium"
+  match:
+    type: process_name
+    value: "chromium"
+  activity:
+    details: "Browsing the web"
+    state: "Chromium"
+    large_image: "picord_browser"
+    large_text: "Chromium"
+  priority: 1
+  enabled: false
+
+- name: "VSCode"
+  match:
+    type: process_name
+    value: "code"
+  activity:
+    details: "Writing code"
+    state: "Visual Studio Code"
+    large_image: "picord_editor"
+    large_text: "VSCode"
+  priority: 3
+  enabled: false
+
+- name: "VSCodium"
+  match:
+    type: process_name
+    value: "codium"
+  activity:
+    details: "Writing code"
+    state: "VSCodium"
+    large_image: "picord_editor"
+    large_text: "VSCodium"
+  priority: 3
+  enabled: false
+
+- name: "IntelliJ IDEA"
+  match:
+    type: process_name
+    value: "idea"
+  activity:
+    details: "Developing software"
+    state: "IntelliJ IDEA"
+    large_image: "picord_editor"
+    large_text: "IntelliJ IDEA"
+  priority: 3
+  enabled: false
+
+- name: "PyCharm"
+  match:
+    type: process_name
+    value: "pycharm"
+  activity:
+    details: "Writing Python"
+    state: "PyCharm"
+    large_image: "picord_editor"
+    large_text: "PyCharm"
+  priority: 3
+  enabled: false
+
+- name: "GoLand"
+  match:
+    type: process_name
+    value: "goland"
+  activity:
+    details: "Writing Go"
+    state: "GoLand"
+    large_image: "picord_editor"
+    large_text: "GoLand"
+  priority: 3
+  enabled: false
+
+- name: "Spotify"
+  match:
+    type: process_name
+    value: "spotify"
+  activity:
+    details: "Listening to music"
+    state: "Spotify"
+    large_image: "picord_media"
+    large_text: "Spotify"
+  priority: 2
+  enabled: false
+
+- name: "VLC"
+  match:
+    type: process_name
+    value: "vlc"
+  activity:
+    details: "Watching media"
+    state: "VLC Media Player"
+    large_image: "picord_media"
+    large_text: "VLC"
+  priority: 2
+  enabled: false
+
+- name: "mpv"
+  match:
+    type: process_name
+    value: "mpv"
+  activity:
+    details: "Watching media"
+    state: "mpv"
+    large_image: "picord_media"
+    large_text: "mpv"
+  priority: 2
+  enabled: false
+
+- name: "OBS Studio"
+  match:
+    type: process_name
+    value: "obs"
+  activity:
+    details: "Streaming / Recording"
+    state: "OBS Studio"
+    large_image: "picord_media"
+    large_text: "OBS Studio"
+  priority: 5
+  enabled: false
+
+- name: "Blender"
+  match:
+    type: process_name
+    value: "blender"
+  activity:
+    details: "Creating 3D art"
+    state: "Blender"
+    large_image: "picord_creator"
+    large_text: "Blender"
+  priority: 3
+  enabled: false
+
+- name: "Krita"
+  match:
+    type: process_name
+    value: "krita"
+  activity:
+    details: "Drawing and painting"
+    state: "Krita"
+    large_image: "picord_creator"
+    large_text: "Krita"
+  priority: 3
+  enabled: false
+
+- name: "Discord"
+  match:
+    type: process_name
+    value: "discord"
+  activity:
+    details: "Chatting on Discord"
+    state: "Discord"
+    large_image: "picord_chat"
+    large_text: "Discord"
+  priority: 1
+  enabled: false
