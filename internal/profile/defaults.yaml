@@ -142,7 +142,7 @@
     state: "RetroArch"
     large_image: "picord"
     large_text: "RetroArch"
-  priority: 10
+  priority: 5
   enabled: true
 
 - name: "Dolphin Emulator"
@@ -154,7 +154,7 @@
     state: "Dolphin Emulator"
     large_image: "picord"
     large_text: "Dolphin"
-  priority: 10
+  priority: 5
   enabled: true
 
 - name: "PCSX2"
@@ -166,7 +166,7 @@
     state: "PCSX2"
     large_image: "picord"
     large_text: "PCSX2"
-  priority: 10
+  priority: 5
   enabled: true
 
 - name: "RPCS3"
@@ -178,7 +178,7 @@
     state: "RPCS3"
     large_image: "picord"
     large_text: "RPCS3"
-  priority: 10
+  priority: 5
   enabled: true
 
 - name: "DuckStation"
@@ -190,7 +190,7 @@
     state: "DuckStation"
     large_image: "picord"
     large_text: "DuckStation"
-  priority: 10
+  priority: 5
   enabled: true
 
 - name: "PPSSPP"
@@ -202,7 +202,7 @@
     state: "PPSSPP"
     large_image: "picord"
     large_text: "PPSSPP"
-  priority: 10
+  priority: 5
   enabled: true
 
 - name: "Yuzu"
@@ -214,7 +214,7 @@
     state: "Yuzu"
     large_image: "picord"
     large_text: "Yuzu"
-  priority: 10
+  priority: 5
   enabled: true
 
 - name: "Citra"
@@ -226,7 +226,7 @@
     state: "Citra"
     large_image: "picord"
     large_text: "Citra"
-  priority: 10
+  priority: 5
   enabled: true
 
 - name: "Cemu"
@@ -238,7 +238,7 @@
     state: "Cemu"
     large_image: "picord"
     large_text: "Cemu"
-  priority: 10
+  priority: 5
   enabled: true
 
 - name: "MAME"
@@ -250,7 +250,7 @@
     state: "MAME"
     large_image: "picord"
     large_text: "MAME"
-  priority: 10
+  priority: 5
   enabled: true
 
 - name: "Xemu"
@@ -262,7 +262,7 @@
     state: "Xemu"
     large_image: "picord"
     large_text: "Xemu"
-  priority: 10
+  priority: 5
   enabled: true
 
 - name: "Flycast"
@@ -274,7 +274,7 @@
     state: "Flycast"
     large_image: "picord"
     large_text: "Flycast"
-  priority: 10
+  priority: 5
   enabled: true
 
 # === SOURCE PORTS (enabled by default) ===
@@ -485,27 +485,124 @@
   priority: 3
   enabled: true
 
-# === DESKTOP APPS (disabled by default — not tracked) ===
-- name: "Firefox"
+- name: "GIMP"
   match:
     type: process_name
-    value: "firefox"
+    value: "gimp"
   activity:
-    details: "Browsing the web"
-    state: "Firefox"
+    details: "Editing images"
+    state: "GIMP"
     large_image: "picord"
-    large_text: "Firefox"
-  priority: 1
-  enabled: false
+    large_text: "GIMP"
+  priority: 3
+  enabled: true
 
-- name: "Chromium"
+- name: "Inkscape"
   match:
     type: process_name
-    value: "chromium"
+    value: "inkscape"
   activity:
-    details: "Browsing the web"
-    state: "Chromium"
+    details: "Creating vector art"
+    state: "Inkscape"
     large_image: "picord"
-    large_text: "Chromium"
-  priority: 1
-  enabled: false
+    large_text: "Inkscape"
+  priority: 3
+  enabled: true
+
+- name: "DaVinci Resolve"
+  match:
+    type: process_name
+    value: "resolve"
+  activity:
+    details: "Editing video"
+    state: "DaVinci Resolve"
+    large_image: "picord"
+    large_text: "DaVinci Resolve"
+  priority: 3
+  enabled: true
+
+- name: "Kdenlive"
+  match:
+    type: process_name
+    value: "kdenlive"
+  activity:
+    details: "Editing video"
+    state: "Kdenlive"
+    large_image: "picord"
+    large_text: "Kdenlive"
+  priority: 3
+  enabled: true
+
+- name: "Audacity"
+  match:
+    type: process_name
+    value: "audacity"
+  activity:
+    details: "Editing audio"
+    state: "Audacity"
+    large_image: "picord"
+    large_text: "Audacity"
+  priority: 3
+  enabled: true
+
+# === MORE EMULATORS ===
+- name: "Snes9x"
+  match:
+    type: process_name
+    value: "snes9x"
+  activity:
+    details: "Playing SNES games"
+    state: "Snes9x"
+    large_image: "picord"
+    large_text: "Snes9x"
+  priority: 5
+  enabled: true
+
+- name: "mGBA"
+  match:
+    type: process_name
+    value: "mgba"
+  activity:
+    details: "Playing GBA games"
+    state: "mGBA"
+    large_image: "picord"
+    large_text: "mGBA"
+  priority: 5
+  enabled: true
+
+- name: "melonDS"
+  match:
+    type: process_name
+    value: "melonds"
+  activity:
+    details: "Playing Nintendo DS"
+    state: "melonDS"
+    large_image: "picord"
+    large_text: "melonDS"
+  priority: 5
+  enabled: true
+
+- name: "DeSmuME"
+  match:
+    type: process_name
+    value: "desmume"
+  activity:
+    details: "Playing Nintendo DS"
+    state: "DeSmuME"
+    large_image: "picord"
+    large_text: "DeSmuME"
+  priority: 5
+  enabled: true
+
+# === MORE GAME ENGINES ===
+- name: "Unreal Editor"
+  match:
+    type: process_name
+    value: "unreal"
+  activity:
+    details: "Making games"
+    state: "Unreal Editor"
+    large_image: "picord"
+    large_text: "Unreal Editor"
+  priority: 5
+  enabled: true

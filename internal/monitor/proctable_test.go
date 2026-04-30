@@ -33,8 +33,8 @@ func TestBuildProcessTable(t *testing.T) {
 	root := setupMockProc(t)
 
 	// Parent
-	createMockProcDir(t, root, 1000, "steam", "")
-	_ = os.WriteFile(filepath.Join(root, "1000", "cmdline"), []byte("steam\x00"), 0644)
+	createMockProcDir(t, root, 1000, "launcher", "")
+	_ = os.WriteFile(filepath.Join(root, "1000", "cmdline"), []byte("launcher\x00"), 0644)
 
 	// Child wine process
 	createMockProcDir(t, root, 1001, "wine", "PPid:\t1000\nPgid:\t1001\nSid:\t1000\n")
@@ -79,7 +79,7 @@ func TestReadProcStatus(t *testing.T) {
 	pid := 5000
 	procDir := filepath.Join(root, fmt.Sprintf("%d", pid))
 	_ = os.MkdirAll(procDir, 0755)
-	status := "Name:\tsteam\nPPid:\t1\nPgid:\t5000\nSid:\t5000\n"
+	status := "Name:\tlauncher\nPPid:\t1\nPgid:\t5000\nSid:\t5000\n"
 	_ = os.WriteFile(filepath.Join(procDir, "status"), []byte(status), 0644)
 
 	ppid, pgid, sid := readProcStatus(procDir)
@@ -99,7 +99,7 @@ func TestReadProcStatusNamespaceFields(t *testing.T) {
 	pid := 5001
 	procDir := filepath.Join(root, fmt.Sprintf("%d", pid))
 	_ = os.MkdirAll(procDir, 0755)
-	status := "Name:\tsteam\nPid:\t5001\nPPid:\t1\nNSpid:\t5001\nNSpgid:\t5000\nNSsid:\t4000\n"
+	status := "Name:\tlauncher\nPid:\t5001\nPPid:\t1\nNSpid:\t5001\nNSpgid:\t5000\nNSsid:\t4000\n"
 	_ = os.WriteFile(filepath.Join(procDir, "status"), []byte(status), 0644)
 
 	ppid, pgid, sid := readProcStatus(procDir)

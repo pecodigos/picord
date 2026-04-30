@@ -157,6 +157,62 @@ func TestMatches_ProcessName_Alias(t *testing.T) {
 	}
 }
 
+func TestMatches_BlankValue(t *testing.T) {
+	blankCases := []struct {
+		name string
+		typ  MatchType
+	}{
+		{"process_name", MatchProcessName},
+		{"window_title", MatchWindowTitle},
+		{"regex", MatchRegex},
+	}
+	for _, tc := range blankCases {
+		p := Profile{
+			Name:     "blank",
+			Enabled:  true,
+			Priority: 5,
+			Match:    MatchRule{Type: tc.typ, Value: ""},
+		}
+		if p.Matches(DetectedProcess{Name: "anything", WindowTitle: "anything"}) >= 0 {
+			t.Errorf("blank %s value should not match anything", tc.name)
+		}
+		// Whitespace-only is also blank
+		p.Match.Value = "   "
+		if p.Matches(DetectedProcess{Name: "anything", WindowTitle: "anything"}) >= 0 {
+			t.Errorf("whitespace-only %s value should not match anything", tc.name)
+		}
+	}
+}
+
+func TestFindBestMatch_StableTieBreak(t *testing.T) {
+	// Same priority, same match value length, same type — first configured wins.
+	profiles := []Profile{
+		{Name: "first", Enabled: true, Priority: 5, Match: MatchRule{Type: MatchProcessName, Value: "steam"}},
+		{Name: "second", Enabled: true, Priority: 5, Match: MatchRule{Type: MatchProcessName, Value: "steam"}},
+	}
+	processes := []DetectedProcess{{Name: "steam"}}
+
+	match, _ := FindBestMatch(profiles, processes)
+	if match == nil || match.Name != "first" {
+		t.Errorf("expected 'first' profile due to stable index tie-break, got %v", match)
+	}
+}
+
+func TestFindBestMatch_MatchTypeSpecificity(t *testing.T) {
+	// Same priority, different match types — process_name should win over regex.
+	profiles := []Profile{
+		{Name: "regex", Enabled: true, Priority: 5, Match: MatchRule{Type: MatchRegex, Value: "^steam.*"}},
+		{Name: "exact", Enabled: true, Priority: 5, Match: MatchRule{Type: MatchProcessName, Value: "steam"}},
+		{Name: "window", Enabled: true, Priority: 5, Match: MatchRule{Type: MatchWindowTitle, Value: "steam"}},
+	}
+	processes := []DetectedProcess{{Name: "steam"}}
+
+	match, _ := FindBestMatch(profiles, processes)
+	if match == nil || match.Name != "exact" {
+		t.Errorf("expected 'exact' profile (process_name specificity), got %v", match)
+	}
+}
+
 func TestMatches_Regex_Alias(t *testing.T) {
 	p := Profile{
 		Name:     "game",
@@ -171,5 +227,37 @@ func TestMatches_Regex_Alias(t *testing.T) {
 	}
 	if p.Matches(proc) < 0 {
 		t.Error("expected regex alias match")
+	}
+}
+
+func BenchmarkMatches_Regex_Cached(b *testing.B) {
+	p := Profile{
+		Name:     "bench",
+		Enabled:  true,
+		Priority: 5,
+		Match:    MatchRule{Type: MatchRegex, Value: `^(steam|epicgames|heroic).*\.exe$`},
+	}
+	proc := DetectedProcess{Name: "steam.exe", Aliases: []string{"steam.exe", "steam"}}
+	// Warm cache.
+	p.Matches(proc)
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		p.Matches(proc)
+	}
+}
+
+// BenchmarkMatches_Regex_Uncached simulates the old behavior by creating a fresh
+// Profile each iteration, forcing regex recompilation.
+func BenchmarkMatches_Regex_Uncached(b *testing.B) {
+	proc := DetectedProcess{Name: "steam.exe", Aliases: []string{"steam.exe", "steam"}}
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		p := Profile{
+			Name:     "bench",
+			Enabled:  true,
+			Priority: 5,
+			Match:    MatchRule{Type: MatchRegex, Value: `^(steam|epicgames|heroic).*\.exe$`},
+		}
+		p.Matches(proc)
 	}
 }

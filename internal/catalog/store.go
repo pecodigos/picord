@@ -21,9 +21,17 @@ func Open(path string) (*Store, error) {
 	db.SetConnMaxLifetime(0)
 	db.SetMaxOpenConns(1)
 
-	if _, err := db.Exec("PRAGMA foreign_keys = ON"); err != nil {
-		db.Close()
-		return nil, fmt.Errorf("enable foreign keys: %w", err)
+	// Enable WAL mode and set busy timeout to survive restarts
+	// where the previous process's connection may still be cleaning up.
+	for _, pragma := range []string{
+		"PRAGMA journal_mode=WAL",
+		"PRAGMA busy_timeout=5000",
+		"PRAGMA foreign_keys=ON",
+	} {
+		if _, err := db.Exec(pragma); err != nil {
+			db.Close()
+			return nil, fmt.Errorf("pragma: %w", err)
+		}
 	}
 
 	s := &Store{db: db}
@@ -134,6 +142,69 @@ func (s *Store) SearchByAlias(ctx context.Context, kind AliasKind, value string)
 	defer rows.Close()
 
 	return scanEntries(rows)
+}
+
+// AliasMatch pairs an Entry with the alias confidence that matched it.
+type AliasMatch struct {
+	Entry      Entry
+	Confidence int
+}
+
+func (s *Store) AliasesForEntry(ctx context.Context, entryID string) ([]Alias, error) {
+	rows, err := s.db.QueryContext(ctx, `
+		SELECT entry_id, kind, value, normalized, confidence
+		FROM aliases
+		WHERE entry_id = ?
+		ORDER BY confidence DESC
+	`, entryID)
+	if err != nil {
+		return nil, fmt.Errorf("query aliases: %w", err)
+	}
+	defer rows.Close()
+
+	var aliases []Alias
+	for rows.Next() {
+		var a Alias
+		if err := rows.Scan(&a.EntryID, &a.Kind, &a.Value, &a.Normalized, &a.Confidence); err != nil {
+			return nil, fmt.Errorf("scan alias: %w", err)
+		}
+		aliases = append(aliases, a)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("rows error: %w", err)
+	}
+	return aliases, nil
+}
+
+func (s *Store) SearchByAliasWithConfidence(ctx context.Context, kind AliasKind, value string) ([]AliasMatch, error) {
+	normalized := NormalizeTitle(value)
+	rows, err := s.db.QueryContext(ctx, `
+		SELECT e.id, e.source, e.source_id, e.kind, e.title, e.normalized_title, e.release_year, e.image_url, e.image_kind, e.discord_asset_key, e.updated_at_unix, a.confidence
+		FROM entries e
+		JOIN aliases a ON e.id = a.entry_id
+		WHERE a.kind = ? AND a.normalized = ?
+		ORDER BY a.confidence DESC
+	`, string(kind), normalized)
+	if err != nil {
+		return nil, fmt.Errorf("query alias: %w", err)
+	}
+	defer rows.Close()
+
+	var results []AliasMatch
+	for rows.Next() {
+		var e Entry
+		var ts int64
+		var conf int
+		if err := rows.Scan(&e.ID, &e.Source, &e.SourceID, &e.Kind, &e.Title, &e.NormalizedTitle, &e.ReleaseYear, &e.ImageURL, &e.ImageKind, &e.DiscordAssetKey, &ts, &conf); err != nil {
+			return nil, fmt.Errorf("scan alias match: %w", err)
+		}
+		e.UpdatedAt = time.Unix(ts, 0)
+		results = append(results, AliasMatch{Entry: e, Confidence: conf})
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("rows error: %w", err)
+	}
+	return results, nil
 }
 
 func (s *Store) SearchTitlePrefix(ctx context.Context, prefix string) ([]Entry, error) {
@@ -288,4 +359,33 @@ func (s *Store) CountAliases(ctx context.Context) (int, error) {
 		return 0, fmt.Errorf("count aliases: %w", err)
 	}
 	return n, nil
+}
+
+// EntriesMissingImages returns entries that have no image_url, up to limit.
+func (s *Store) EntriesMissingImages(ctx context.Context, limit int) ([]Entry, error) {
+	rows, err := s.db.QueryContext(ctx, `
+		SELECT id, source, source_id, kind, title, normalized_title, release_year, image_url, image_kind, discord_asset_key, updated_at_unix
+		FROM entries
+		WHERE image_url = ''
+		ORDER BY updated_at_unix DESC
+		LIMIT ?
+	`, limit)
+	if err != nil {
+		return nil, fmt.Errorf("query missing images: %w", err)
+	}
+	defer rows.Close()
+	return scanEntries(rows)
+}
+
+// UpdateEntryImage sets the image_url and image_kind for a single entry.
+func (s *Store) UpdateEntryImage(ctx context.Context, id, imageURL, imageKind string) error {
+	_, err := s.db.ExecContext(ctx, `
+		UPDATE entries
+		SET image_url = ?, image_kind = ?, updated_at_unix = ?
+		WHERE id = ?
+	`, imageURL, imageKind, time.Now().Unix(), id)
+	if err != nil {
+		return fmt.Errorf("update entry image: %w", err)
+	}
+	return nil
 }

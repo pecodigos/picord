@@ -90,8 +90,9 @@ func TestMatcher_Executable(t *testing.T) {
 	if result.Entry.Title != "Firefox" {
 		t.Errorf("title=%q, want Firefox", result.Entry.Title)
 	}
-	if result.Confidence != 80 {
-		t.Errorf("confidence=%d, want 80", result.Confidence)
+	// Effective confidence = min(methodConfidence=80, aliasConfidence=70)
+	if result.Confidence != 70 {
+		t.Errorf("confidence=%d, want 70 (min of method and alias confidence)", result.Confidence)
 	}
 }
 

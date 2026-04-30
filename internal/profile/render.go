@@ -32,26 +32,3 @@ func RenderActivity(act Activity, proc DetectedProcess) Activity {
 		PartyID:    act.PartyID,
 	}
 }
-
-// RenderActivityWithCatalog replaces template variables using both process
-// and catalog entry metadata.
-func RenderActivityWithCatalog(act Activity, proc DetectedProcess, title, source string) Activity {
-	replacer := strings.NewReplacer(
-		"{process_name}", proc.Name,
-		"{window_title}", proc.WindowTitle,
-		"{title}", title,
-		"{source}", source,
-		"{steam_app_id}", proc.SteamAppID,
-	)
-
-	return Activity{
-		Details:    replacer.Replace(act.Details),
-		State:      replacer.Replace(act.State),
-		LargeImage: act.LargeImage,
-		LargeText:  replacer.Replace(act.LargeText),
-		SmallImage: act.SmallImage,
-		SmallText:  replacer.Replace(act.SmallText),
-		Buttons:    act.Buttons,
-		PartyID:    act.PartyID,
-	}
-}

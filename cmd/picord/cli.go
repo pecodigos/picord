@@ -2,6 +2,7 @@ package main
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"flag"
 	"fmt"
@@ -13,7 +14,9 @@ import (
 	"path/filepath"
 	"strings"
 	"text/tabwriter"
+	"time"
 
+	"github.com/pecodigos/picord/internal/catalog"
 	"github.com/pecodigos/picord/internal/config"
 	"github.com/pecodigos/picord/internal/monitor"
 	"github.com/pecodigos/picord/internal/profile"
@@ -31,6 +34,8 @@ func runCLI(args []string, debug bool) int {
 		return runDaemon(debug)
 	case "status":
 		return cmdStatus(args[1:])
+	case "diagnose":
+		return cmdDiagnose()
 	case "profiles", "profile":
 		return cmdProfiles(args[1:])
 	case "override":
@@ -45,6 +50,8 @@ func runCLI(args []string, debug bool) int {
 		return cmdDebugRPCImage(args[1:])
 	case "debug-processes":
 		return cmdDebugProcesses(args[1:])
+	case "debug-scan":
+		return cmdDebugScan(args[1:])
 	case "help", "-h", "--help":
 		printUsage()
 		return 0
@@ -61,13 +68,15 @@ func printUsage() {
 Commands:
   run              Run the daemon (default if no command given)
   status           Show current presence status
+  diagnose         Test Discord Rich Presence connection
   profiles         List all profiles or create from catalog
   override         Set a manual override
   clear            Clear manual override
   reload           Reload configuration from disk
-  catalog          Catalog management (status, search, refresh)
+  catalog          Catalog management (status, search, refresh, enrich)
   debug-rpc-image  Test a Discord Rich Presence image
   debug-processes  Show process identity hints and Wine/Proton aliases
+  debug-scan       Run a single process scan and print detected identities
   help             Show this help message
 
 Status options:
@@ -91,6 +100,7 @@ Catalog commands:
   picord catalog status
   picord catalog search <query>
   picord catalog refresh --source <source> [--max-pages N]
+  picord catalog enrich [--batch-size N]
 
 Profile commands:
   picord profile from-catalog <entry-id>
@@ -113,7 +123,14 @@ func getAPIToken() string {
 }
 
 func apiGet(path string) (*http.Response, error) {
-	return http.Get(getAPIBase() + path)
+	req, err := http.NewRequest(http.MethodGet, getAPIBase()+path, nil)
+	if err != nil {
+		return nil, err
+	}
+	if t := getAPIToken(); t != "" {
+		req.Header.Set("X-Picord-Token", t)
+	}
+	return http.DefaultClient.Do(req)
 }
 
 func apiPost(path string, body any) (*http.Response, error) {
@@ -122,22 +139,6 @@ func apiPost(path string, body any) (*http.Response, error) {
 		return nil, err
 	}
 	req, err := http.NewRequest(http.MethodPost, getAPIBase()+path, bytes.NewReader(data))
-	if err != nil {
-		return nil, err
-	}
-	req.Header.Set("Content-Type", "application/json")
-	if t := getAPIToken(); t != "" {
-		req.Header.Set("X-Picord-Token", t)
-	}
-	return http.DefaultClient.Do(req)
-}
-
-func apiPut(path string, body any) (*http.Response, error) {
-	data, err := json.Marshal(body)
-	if err != nil {
-		return nil, err
-	}
-	req, err := http.NewRequest(http.MethodPut, getAPIBase()+path, bytes.NewReader(data))
 	if err != nil {
 		return nil, err
 	}
@@ -172,6 +173,7 @@ func printResponse(resp *http.Response) {
 func cmdStatus(args []string) int {
 	fs := flag.NewFlagSet("status", flag.ExitOnError)
 	verbose := fs.Bool("verbose", false, "Show verbose output including aliases")
+	jsonOut := fs.Bool("json", false, "Output raw JSON response")
 	fs.Parse(args)
 
 	path := "/api/status"
@@ -185,8 +187,30 @@ func cmdStatus(args []string) int {
 	}
 	defer resp.Body.Close()
 
+	if resp.StatusCode != http.StatusOK {
+		body, _ := io.ReadAll(resp.Body)
+		fmt.Fprintf(os.Stderr, "Error: %s\n%s\n", resp.Status, string(body))
+		return 1
+	}
+
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "Error reading response: %v\n", err)
+		return 1
+	}
+
+	if *jsonOut {
+		var pretty bytes.Buffer
+		if err := json.Indent(&pretty, body, "", "  "); err != nil {
+			fmt.Fprintf(os.Stderr, "Error formatting JSON: %v\n", err)
+			return 1
+		}
+		fmt.Println(pretty.String())
+		return 0
+	}
+
 	var result map[string]any
-	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
+	if err := json.Unmarshal(body, &result); err != nil {
 		fmt.Fprintf(os.Stderr, "Error decoding response: %v\n", err)
 		return 1
 	}
@@ -207,8 +231,50 @@ func cmdStatus(args []string) int {
 	fmt.Printf("Auto-Detect:    %v\n", auto)
 	fmt.Printf("Has Override:   %v\n", override)
 
+	if rpc, ok := result["rpc_connected"].(bool); ok {
+		status := "disconnected"
+		if rpc {
+			status = "connected"
+		}
+		fmt.Printf("Discord:        %s\n", status)
+	}
+	if appID := safeString(result, "app_id"); appID != "" {
+		fmt.Printf("App ID:         %s\n", appID)
+	}
+
+	if state := safeString(result, "scan_state"); state != "" {
+		fmt.Printf("Scan State:     %s\n", state)
+	}
+	if mode := safeString(result, "scan_mode"); mode != "" {
+		fmt.Printf("Scan Mode:      %s\n", mode)
+	}
 	if t := safeString(result, "last_scan_time"); t != "" {
 		fmt.Printf("Last Scan:      %s\n", t)
+	}
+
+	if *verbose {
+		if mi, ok := result["match_info"].(map[string]any); ok && mi != nil {
+			fmt.Printf("\nMatch Info:\n")
+			fmt.Printf("  Source:       %s\n", safeString(mi, "source"))
+			if name := safeString(mi, "profile_name"); name != "" {
+				fmt.Printf("  Profile:      %s\n", name)
+			}
+			if procName := safeString(mi, "process_name"); procName != "" {
+				fmt.Printf("  Process:      %s\n", procName)
+			}
+			if reason := safeString(mi, "reason"); reason != "" {
+				fmt.Printf("  Reason:       %s\n", reason)
+			}
+			if conf, ok := mi["confidence"].(float64); ok && conf > 0 {
+				fmt.Printf("  Confidence:   %.0f\n", conf)
+			}
+			if appID := safeString(mi, "discord_app_id"); appID != "" {
+				fmt.Printf("  Discord App:  %s\n", appID)
+			}
+			if connected, ok := mi["rpc_connected"].(bool); ok {
+				fmt.Printf("  RPC Connected: %v\n", connected)
+			}
+		}
 	}
 
 	if procs, ok := result["detected_processes"].([]any); ok && len(procs) > 0 {
@@ -532,7 +598,7 @@ func cmdDebugProcesses(args []string) int {
 func cmdCatalog(args []string) int {
 	if len(args) == 0 {
 		fmt.Fprintln(os.Stderr, "Error: catalog subcommand required")
-		fmt.Fprintln(os.Stderr, "Usage: picord catalog status|search|refresh")
+		fmt.Fprintln(os.Stderr, "Usage: picord catalog status|search|refresh|enrich")
 		return 1
 	}
 	switch args[0] {
@@ -543,9 +609,12 @@ func cmdCatalog(args []string) int {
 			fmt.Fprintln(os.Stderr, "Error: search query required")
 			return 1
 		}
-		return cmdCatalogSearch(args[1])
+		query := strings.Join(args[1:], " ")
+		return cmdCatalogSearch(query)
 	case "refresh":
 		return cmdCatalogRefresh(args[1:])
+	case "enrich":
+		return cmdCatalogEnrich(args[1:])
 	default:
 		fmt.Fprintf(os.Stderr, "Unknown catalog subcommand: %s\n", args[0])
 		return 1
@@ -600,6 +669,21 @@ func cmdCatalogRefresh(args []string) int {
 	return 0
 }
 
+func cmdCatalogEnrich(args []string) int {
+	fs := flag.NewFlagSet("enrich", flag.ExitOnError)
+	batchSize := fs.Int("batch-size", 50, "Max entries to enrich in this run")
+	fs.Parse(args)
+
+	reqBody := map[string]any{"batch_size": *batchSize}
+	resp, err := apiPost("/api/catalog/enrich", reqBody)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "Cannot connect to picord daemon: %v\n", err)
+		return 1
+	}
+	printResponse(resp)
+	return 0
+}
+
 func cmdProfiles(args []string) int {
 	if len(args) >= 2 && args[0] == "from-catalog" {
 		return cmdProfileFromCatalog(args[1])
@@ -639,5 +723,171 @@ func cmdProfileFromCatalog(entryID string) int {
 		return 1
 	}
 	printResponse(resp)
+	return 0
+}
+
+func cmdDiagnose() int {
+	configDir := configDirPath()
+	configPath := filepath.Join(configDir, "picord", "config.yaml")
+
+	cfg, err := config.Load(configPath)
+	if err != nil {
+		fmt.Printf("Config:        failed to load (%v), using defaults\n", err)
+		cfg = defaultConfig()
+	} else {
+		fmt.Println("Config:        loaded successfully")
+	}
+
+	appID := cfg.ResolveDiscordApp("main")
+	fmt.Printf("App ID:        %s\n", appID)
+
+	// Step 1: Socket discovery
+	fmt.Println("\n--- Discord IPC Socket ---")
+	socket, err := rpc.DiscoverSocket()
+	if err != nil {
+		fmt.Printf("Socket:        NOT FOUND (%v)\n", err)
+		fmt.Println("\nDiagnosis: Discord is not running or the IPC socket is not available.")
+		fmt.Println("Make sure Discord is running and you're not using a Flatpak/Snap")
+		fmt.Println("version that isolates the IPC socket.")
+		return 1
+	}
+	fmt.Printf("Socket:        %s\n", socket)
+
+	// Step 2: Connect
+	fmt.Println("\n--- Connection ---")
+	client, err := rpc.NewClient(appID)
+	if err != nil {
+		fmt.Printf("Connect:       FAILED (%v)\n", err)
+		fmt.Println("\nDiagnosis: Could not establish IPC connection to Discord.")
+		fmt.Println("Common causes:")
+		fmt.Println("  - Discord is running but the socket path is wrong")
+		fmt.Println("  - Permission denied on the socket")
+		fmt.Println("  - Another client is already connected and Discord limits connections")
+		return 1
+	}
+	fmt.Println("Connect:       OK")
+	defer client.Close()
+
+	// Step 3: Send test activity
+	fmt.Println("\n--- Rich Presence Test ---")
+	testActivity := &rpc.RichActivity{
+		Details:  "Picord Diagnostic",
+		State:    "Testing connection...",
+		Instance: false,
+	}
+	if err := client.SetActivity(testActivity); err != nil {
+		fmt.Printf("SetActivity:   FAILED (%v)\n", err)
+		fmt.Println("\nDiagnosis: Connected to Discord but could not set activity.")
+		fmt.Println("Common causes:")
+		fmt.Println("  - Invalid Application ID (app not registered or deleted)")
+		fmt.Println("  - Discord rate limiting")
+		return 1
+	}
+	fmt.Println("SetActivity:   OK")
+	fmt.Println("\nDiagnosis: Discord Rich Presence is working!")
+	fmt.Println("You should see 'Picord Diagnostic' in your Discord status now.")
+	fmt.Println("(It will clear when this command exits)")
+
+	// Keep it visible for a moment
+	fmt.Println("\nClearing test activity in 3 seconds...")
+	time.Sleep(3 * time.Second)
+	_ = client.ClearActivity()
+	return 0
+}
+
+func cmdDebugScan(args []string) int {
+	fs := flag.NewFlagSet("debug-scan", flag.ExitOnError)
+	verbose := fs.Bool("verbose", false, "Show match attempts against catalog")
+	fs.Parse(args)
+
+	fmt.Println("Running single process scan...")
+	fmt.Println()
+
+	procs := monitor.ResolveProcessIdentities()
+	if len(procs) == 0 {
+		fmt.Println("No processes detected.")
+		fmt.Println("This usually means:")
+		fmt.Println("  - scan_all_processes is false and no Discord IPC candidates were found")
+		fmt.Println("  - all visible processes are excluded (browsers, Discord, terminals)")
+		fmt.Println("  - the game is running but its process name is unexpected")
+		return 0
+	}
+
+	w := tabwriter.NewWriter(os.Stdout, 0, 0, 2, ' ', 0)
+	fmt.Fprintln(w, "PID\tNAME\tSTEAM\tALIASES\tWINDOW TITLE")
+	for _, p := range procs {
+		steam := p.SteamAppID
+		if steam == "" {
+			steam = "-"
+		}
+		aliases := "-"
+		if len(p.Aliases) > 0 {
+			aliases = strings.Join(p.Aliases, ", ")
+		}
+		title := p.WindowTitle
+		if title == "" {
+			title = "-"
+		}
+		fmt.Fprintf(w, "%d\t%s\t%s\t%s\t%s\n", p.PID, p.Name, steam, aliases, title)
+	}
+	w.Flush()
+	fmt.Printf("\nTotal detected processes: %d\n", len(procs))
+
+	if *verbose {
+		fmt.Println("\n--- Match Attempts ---")
+		configDir := configDirPath()
+		configPath := filepath.Join(configDir, "picord", "config.yaml")
+		cfg, err := config.Load(configPath)
+		if err != nil {
+			fmt.Printf("Cannot load config: %v\n", err)
+			return 0
+		}
+
+		dataDir := os.Getenv("XDG_DATA_HOME")
+		if dataDir == "" {
+			home, _ := os.UserHomeDir()
+			if home != "" {
+				dataDir = filepath.Join(home, ".local", "share")
+			}
+		}
+		dbPath := filepath.Join(dataDir, "picord", "catalog.db")
+
+		store, err := catalog.Open(dbPath)
+		if err != nil {
+			fmt.Printf("Cannot open catalog: %v\n", err)
+			return 0
+		}
+		defer store.Close()
+
+		ctx := context.Background()
+		matcher := catalog.NewMatcher(store)
+		imgResolver := catalog.ImageResolver{
+			Mode:            catalog.ImageMode(cfg.Images.Mode),
+			GenericAssetKey: cfg.Images.GenericAssetKey,
+			ExternalEnabled: cfg.Images.ExternalValidated,
+		}
+
+		pm := profile.NewManager(cfg.Profiles, profile.DefaultProfiles())
+
+		for _, p := range procs {
+			catResult := matcher.Match(ctx, p)
+			profileMatch, _ := pm.Match([]profile.DetectedProcess{p})
+
+			if catResult != nil || profileMatch != nil {
+				fmt.Printf("\nPID %d %q:\n", p.PID, p.Name)
+				if catResult != nil {
+					p := catResult.ToProfile(imgResolver)
+					fmt.Printf("  catalog: %q (confidence=%d reason=%s source=%s)\n",
+						catResult.Entry.Title, catResult.Confidence, catResult.Reason, catResult.Entry.Source)
+					fmt.Printf("    -> would show: %q / %q\n", p.Activity.Details, p.Activity.State)
+				}
+				if profileMatch != nil {
+					fmt.Printf("  profile: %q (priority=%d type=%s)\n",
+						profileMatch.Name, profileMatch.Priority, profileMatch.Match.Type)
+				}
+			}
+		}
+	}
+
 	return 0
 }

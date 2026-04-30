@@ -238,11 +238,42 @@ func getKDEWindows() (map[int]string, error) {
 }
 
 func getKDEDBusWindows() (map[int]string, error) {
-	// Fallback: try to get info from KWin via qdbus
-	out, err := exec.Command("qdbus", "org.kde.KWin", "/KWin", "org.kde.KWin.virtualDesktopIds").Output()
+	// Query KWin's D-Bus interface for window list.
+	// Each window is exposed as /org/kde/KWin/Client/<id> with caption and pid properties.
+	out, err := exec.Command("qdbus", "org.kde.KWin", "/KWin", "org.kde.KWin.clientList").Output()
 	if err != nil {
 		return nil, err
 	}
-	_ = out
-	return nil, fmt.Errorf("KDE dbus window enumeration not yet implemented")
+
+	titles := make(map[int]string)
+	lines := strings.Split(string(out), "\n")
+	for _, line := range lines {
+		line = strings.TrimSpace(line)
+		if line == "" {
+			continue
+		}
+		winID := line
+
+		titleOut, err := exec.Command("qdbus", "org.kde.KWin", "/org/kde/KWin/Client/"+winID, "org.kde.KWin.Client.caption").Output()
+		if err != nil {
+			continue
+		}
+		pidOut, err := exec.Command("qdbus", "org.kde.KWin", "/org/kde/KWin/Client/"+winID, "org.kde.KWin.Client.pid").Output()
+		if err != nil {
+			continue
+		}
+		pid := 0
+		if _, err := fmt.Sscanf(string(pidOut), "%d", &pid); err != nil || pid == 0 {
+			continue
+		}
+		title := strings.TrimSpace(string(titleOut))
+		if title != "" {
+			titles[pid] = title
+		}
+	}
+
+	if len(titles) == 0 {
+		return nil, fmt.Errorf("no KWin clients found via dbus")
+	}
+	return titles, nil
 }

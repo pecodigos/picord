@@ -22,10 +22,6 @@ type Monitor struct {
 	callback func([]profile.DetectedProcess)
 }
 
-func New(intervalSec int, callback func([]profile.DetectedProcess)) *Monitor {
-	return NewWithOptions(intervalSec, false, callback)
-}
-
 func NewWithOptions(intervalSec int, scanAll bool, callback func([]profile.DetectedProcess)) *Monitor {
 	return &Monitor{
 		interval: time.Duration(intervalSec) * time.Second,
@@ -33,6 +29,10 @@ func NewWithOptions(intervalSec int, scanAll bool, callback func([]profile.Detec
 		stopCh:   make(chan struct{}),
 		callback: callback,
 	}
+}
+
+func New(intervalSec int, callback func([]profile.DetectedProcess)) *Monitor {
+	return NewWithOptions(intervalSec, false, callback)
 }
 
 func (m *Monitor) SetDebug(enabled bool) {
@@ -78,10 +78,6 @@ func (m *Monitor) ScanNow() []profile.DetectedProcess {
 	return scanProcesses(m.scanAll)
 }
 
-func scan() []profile.DetectedProcess {
-	return scanProcesses(false)
-}
-
 func scanProcesses(scanAll bool) []profile.DetectedProcess {
 	if scanAll {
 		// Full resolver path: read expensive data for all processes.
@@ -112,7 +108,8 @@ func scanProcesses(scanAll bool) []profile.DetectedProcess {
 	return filtered
 }
 
-// findDiscordIPCPIDs returns PIDs that have an open discord-ipc fd.
+// findDiscordIPCPIDs returns PIDs that have an open discord-ipc fd,
+// excluding known desktop noise like Discord itself and browsers.
 func findDiscordIPCPIDs() []int {
 	entries, err := os.ReadDir(procRoot)
 	if err != nil {
@@ -126,6 +123,11 @@ func findDiscordIPCPIDs() []int {
 		}
 		pid, err := strconv.Atoi(entry.Name())
 		if err != nil {
+			continue
+		}
+		// Skip excluded apps (Discord opens discord-ipc itself)
+		name := readProcName(pid)
+		if isExcludedApp(name) {
 			continue
 		}
 		if processHasDiscordIPC(entry.Name()) {

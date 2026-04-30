@@ -130,6 +130,22 @@ func (m *Manager) Add(p Profile) {
 	m.rebuildByName()
 }
 
+func (m *Manager) Replace(p Profile) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+
+	if idx, ok := m.byName[p.Name]; ok {
+		existing := m.profiles[idx]
+		m.profiles[idx] = p
+		m.profiles[idx].isDefault = existing.isDefault
+	} else if p.Enabled {
+		m.profiles = append(m.profiles, p)
+		m.byName[p.Name] = len(m.profiles) - 1
+	}
+	m.sortByPriority()
+	m.rebuildByName()
+}
+
 func (m *Manager) Delete(name string) bool {
 	m.mu.Lock()
 	defer m.mu.Unlock()
@@ -156,10 +172,6 @@ func (m *Manager) Match(processes []DetectedProcess) (*Profile, *DetectedProcess
 	m.mu.RLock()
 	defer m.mu.RUnlock()
 	return FindBestMatch(m.profiles, processes)
-}
-
-func SerializeProfiles(profiles []Profile) ([]byte, error) {
-	return yaml.Marshal(profiles)
 }
 
 func DeserializeProfiles(data []byte) ([]Profile, error) {

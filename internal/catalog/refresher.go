@@ -9,13 +9,14 @@ import (
 
 // Refresher runs background catalog metadata refreshes on a schedule.
 type Refresher struct {
-	store    *Store
-	sources  []Source
-	interval time.Duration
-	stopCh   chan struct{}
-	wg       sync.WaitGroup
-	mu       sync.Mutex
-	running  bool
+	store     *Store
+	sources   []Source
+	enricher  *Enricher
+	interval  time.Duration
+	stopCh    chan struct{}
+	wg        sync.WaitGroup
+	mu        sync.Mutex
+	running   bool
 }
 
 // NewRefresher creates a refresher. If interval is 0, it defaults to 24 hours.
@@ -29,6 +30,13 @@ func NewRefresher(store *Store, sources []Source, interval time.Duration) *Refre
 		interval: interval,
 		stopCh:   make(chan struct{}),
 	}
+}
+
+// SetEnricher attaches an enricher that runs after each refresh cycle.
+func (r *Refresher) SetEnricher(e *Enricher) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	r.enricher = e
 }
 
 // Start begins the background refresh loop. It is safe to call multiple times.
@@ -87,13 +95,15 @@ func (r *Refresher) refreshAll() {
 		}
 
 		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Minute)
-		log.Printf("[catalog] refreshing source=%s", src.Name())
+		before, _ := r.store.CountEntries(ctx)
+		log.Printf("[catalog] refreshing source=%s (entries before=%d)", src.Name(), before)
 		err := src.Refresh(ctx, r.store, RefreshOptions{})
+		after, _ := r.store.CountEntries(ctx)
 		cancel()
 		if err != nil {
 			log.Printf("[catalog] refresh source=%s error: %v", src.Name(), err)
 		} else {
-			log.Printf("[catalog] refresh source=%s completed", src.Name())
+			log.Printf("[catalog] refresh source=%s completed (entries after=%d, delta=%+d)", src.Name(), after, after-before)
 		}
 
 		// Small rate-limit pause between sources.
@@ -101,6 +111,21 @@ func (r *Refresher) refreshAll() {
 		case <-r.stopCh:
 			return
 		case <-time.After(2 * time.Second):
+		}
+	}
+
+	// After all sources refreshed, run enrichment if configured.
+	r.mu.Lock()
+	enricher := r.enricher
+	r.mu.Unlock()
+	if enricher != nil && enricher.Enabled() {
+		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Minute)
+		n, err := enricher.EnrichMissingImages(ctx, 50)
+		cancel()
+		if err != nil {
+			log.Printf("[catalog] enrichment error: %v", err)
+		} else if n > 0 {
+			log.Printf("[catalog] enriched %d entries with SteamGridDB", n)
 		}
 	}
 }

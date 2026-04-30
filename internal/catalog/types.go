@@ -7,7 +7,6 @@ type EntryKind string
 const (
 	EntryKindGame        EntryKind = "game"
 	EntryKindApplication EntryKind = "application"
-	EntryKindLauncher    EntryKind = "launcher"
 )
 
 type Entry struct {
@@ -53,19 +52,6 @@ type Image struct {
 	MIME      string
 	Status    string
 	FetchedAt time.Time
-}
-
-type DetectionHints struct {
-	PID         int
-	Name        string
-	ExePath     string
-	Cwd         string
-	Args        []string
-	WindowTitle string
-	Env         map[string]string
-	SteamAppID  string
-	LutrisSlug  string
-	DesktopID   string
 }
 
 type MatchResult struct {

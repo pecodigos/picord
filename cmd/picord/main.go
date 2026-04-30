@@ -9,6 +9,8 @@ import (
 	"os"
 	"os/signal"
 	"path/filepath"
+	"strconv"
+	"strings"
 	"sync"
 	"syscall"
 	"time"
@@ -19,6 +21,7 @@ import (
 	"github.com/pecodigos/picord/internal/profile"
 	"github.com/pecodigos/picord/internal/rpc"
 	"github.com/pecodigos/picord/internal/server"
+	"github.com/pecodigos/picord/internal/settings"
 	"github.com/pecodigos/picord/internal/tray"
 )
 
@@ -110,6 +113,23 @@ func (rm *rpcManager) isConnected() bool {
 	return rm.client != nil && rm.client.IsConnected()
 }
 
+func (rm *rpcManager) switchApp(appID string) error {
+	rm.mu.Lock()
+	if appID == "" || appID == rm.appID {
+		rm.mu.Unlock()
+		return nil
+	}
+	c := rm.client
+	rm.client = nil
+	rm.appID = appID
+	rm.mu.Unlock()
+	if c != nil {
+		c.ClearActivity()
+		c.Close()
+	}
+	return rm.connect()
+}
+
 func (rm *rpcManager) setActivity(a *rpc.RichActivity) error {
 	rm.mu.Lock()
 	c := rm.client
@@ -131,6 +151,17 @@ func (rm *rpcManager) clearActivity() {
 	}
 }
 
+func (rm *rpcManager) setIdleActivity(assetKey string) error {
+	act := &rpc.RichActivity{
+		Details: "Idle",
+		Assets: &rpc.RichAssets{
+			LargeImage: assetKey,
+			LargeText:  "Picord",
+		},
+	}
+	return rm.setActivity(act)
+}
+
 func (rm *rpcManager) close() {
 	rm.mu.Lock()
 	c := rm.client
@@ -147,20 +178,45 @@ func runDaemon(debug bool) int {
 	configDir := configDirPath()
 	configPath := filepath.Join(configDir, "picord", "config.yaml")
 
+	// Acquire singleton lock so only one Picord daemon runs at a time.
+	stateDir := os.Getenv("XDG_STATE_HOME")
+	if stateDir == "" {
+		home, _ := os.UserHomeDir()
+		if home != "" {
+			stateDir = filepath.Join(home, ".local", "state")
+		}
+	}
+	pidFile := filepath.Join(stateDir, "picord", "picord.pid")
+	releaseLock, err := acquireLock(pidFile)
+	if err != nil {
+		log.Printf("Picord is already running (pid: %s)", err)
+		return 1
+	}
+	defer releaseLock()
+
 	cfg, err := config.Load(configPath)
 	if err != nil {
 		log.Printf("Error loading config: %v, using defaults", err)
 		cfg = defaultConfig()
 	}
 
-	rpcMgr := newRPCManager(cfg.ResolveDiscordApp("main"))
-	if err := rpcMgr.connect(); err != nil {
-		log.Printf("Warning: Cannot connect to Discord: %v", err)
-		log.Println("Picord will run but Rich Presence won't work until Discord is available.")
-	}
-
+	appID := cfg.ResolveDiscordApp("main")
+	log.Printf("[discord] using app ID: %s", appID)
+	rpcMgr := newRPCManager(appID)
 	state := server.NewAppState()
 	state.SetAutoDetect(true)
+	state.SetAppID(appID)
+	if err := rpcMgr.connect(); err != nil {
+		log.Printf("[discord] connection failed: %v", err)
+		log.Println("[discord] Picord will retry every 10s. Rich Presence won't work until Discord is available.")
+		state.SetRPCConnected(false)
+	} else {
+		log.Println("[discord] connected successfully")
+		state.SetRPCConnected(true)
+		if err := rpcMgr.setIdleActivity(cfg.Images.GenericAssetKey); err != nil {
+			log.Printf("Error setting idle presence: %v", err)
+		}
+	}
 
 	defaultProfiles := profile.DefaultProfiles()
 	profileMgr := profile.NewManager(cfg.Profiles, defaultProfiles)
@@ -200,6 +256,9 @@ func runDaemon(debug bool) int {
 				}
 				if len(sources) > 0 {
 					catalogRefresher = catalog.NewRefresher(catalogStore, sources, time.Duration(cfg.Catalog.RefreshHours)*time.Hour)
+					if cfg.Catalog.SteamGridDBAPIKey != "" {
+						catalogRefresher.SetEnricher(catalog.NewEnricher(catalogStore, cfg.Catalog.SteamGridDBAPIKey))
+					}
 					catalogRefresher.Start()
 				}
 			}
@@ -242,6 +301,9 @@ func runDaemon(debug bool) int {
 				}
 				if len(sources) > 0 {
 					catalogRefresher = catalog.NewRefresher(catalogStore, sources, time.Duration(newCfg.Catalog.RefreshHours)*time.Hour)
+					if newCfg.Catalog.SteamGridDBAPIKey != "" {
+						catalogRefresher.SetEnricher(catalog.NewEnricher(catalogStore, newCfg.Catalog.SteamGridDBAPIKey))
+					}
 					catalogRefresher.Start()
 				}
 			}
@@ -249,14 +311,26 @@ func runDaemon(debug bool) int {
 		log.Printf("[%s] Config reloaded", source)
 	}
 
+	var settingsDialog *settings.Dialog
+
 	configMgr, configErr := config.NewManager(configPath, func(newCfg config.AppConfig) {
 		applyConfig(newCfg, "watcher")
+		if settingsDialog != nil {
+			settingsDialog.UpdateConfig(newCfg)
+		}
 	})
 	if configErr != nil {
 		log.Printf("Config watcher error: %v", configErr)
 	}
 
-	stateDir := server.TokenStateDir()
+	settingsDialog = settings.NewDialog(cfg, func(newCfg config.AppConfig) error {
+		if configMgr != nil {
+			return configMgr.Update(newCfg)
+		}
+		return config.Save(configPath, newCfg)
+	}, func() {})
+
+	stateDir = server.TokenStateDir()
 	apiToken, tokenErr := server.GenerateToken(stateDir)
 	if tokenErr != nil {
 		log.Printf("Warning: cannot generate API token: %v", tokenErr)
@@ -264,11 +338,31 @@ func runDaemon(debug bool) int {
 
 	webServer := server.New(state, profileMgr, catalogStore)
 	webServer.SetToken(apiToken)
+	webServer.SetSettingsProvider(func() config.AppConfig {
+		if configMgr != nil {
+			return configMgr.Config()
+		}
+		return cfg
+	})
+	if cfg.Catalog.SteamGridDBAPIKey != "" {
+		webServer.SetCatalogEnricher(catalog.NewEnricher(catalogStore, cfg.Catalog.SteamGridDBAPIKey))
+	}
 	webServer.OnOverrideSet = func(p *profile.Profile) {
 		state.SetOverride(p)
 		if p != nil {
-			setRichPresence(rpcMgr, p, nil)
+			appID := cfg.ResolveDiscordApp("main")
+			if p.DiscordApp != "" {
+				appID = cfg.ResolveDiscordApp(p.DiscordApp)
+			}
+			setRichPresence(rpcMgr, appID, p, nil)
+			state.SetAppID(appID)
 			tray.UpdateStatus("Manual: " + p.Name)
+			state.SetMatchInfo(profile.MatchInfo{
+				Source:       "override",
+				ProfileName:  p.Name,
+				DiscordAppID: appID,
+				RPConnected:  rpcMgr.isConnected(),
+			})
 		}
 	}
 	webServer.OnOverrideClear = func() {
@@ -276,6 +370,10 @@ func runDaemon(debug bool) int {
 		currentProfile = nil
 		rpcMgr.clearActivity()
 		tray.UpdateStatus("Idle")
+		state.SetMatchInfo(profile.MatchInfo{
+			Source:      "none",
+			RPConnected: rpcMgr.isConnected(),
+		})
 	}
 	webServer.OnAutoDetectSet = func(enabled bool) {
 		state.SetAutoDetect(enabled)
@@ -288,10 +386,22 @@ func runDaemon(debug bool) int {
 			tray.UpdateStatus("Idle")
 		}
 	}
+	webServer.OnSettingsSaved = func(newCfg config.AppConfig) error {
+		if configMgr != nil {
+			return configMgr.Update(newCfg)
+		}
+		applyConfig(newCfg, "settings")
+		return config.Save(configPath, newCfg)
+	}
 	webServer.OnReloadConfig = func() {
 		newCfg, err := config.Load(configPath)
 		if err == nil {
 			applyConfig(newCfg, "gui")
+			if newCfg.Catalog.SteamGridDBAPIKey != "" {
+				webServer.SetCatalogEnricher(catalog.NewEnricher(catalogStore, newCfg.Catalog.SteamGridDBAPIKey))
+			} else {
+				webServer.SetCatalogEnricher(nil)
+			}
 		}
 	}
 	webServer.OnProfilesSaved = func(profiles []profile.Profile) {
@@ -305,35 +415,71 @@ func runDaemon(debug bool) int {
 	httpServer := server.StartServer(fmt.Sprintf("127.0.0.1:%d", cfg.WebPort), webServer)
 
 	procMonitor := monitor.NewWithOptions(cfg.PollInterval, cfg.ScanAllProcesses, func(procs []profile.DetectedProcess) {
-		state.SetDetected(procs)
-		state.SetLastScanTime(time.Now().Format(time.RFC3339))
+		mode := server.ScanModeIPCCandidates
+		if cfg.ScanAllProcesses {
+			mode = server.ScanModeAll
+		}
+		state.SetScanSnapshot(server.ScanSnapshot{
+			Procs: procs,
+			Time:  time.Now(),
+			Mode:  mode,
+			State: server.ScanStateScanned,
+		})
 
 		if state.HasOverride() || !state.AutoDetectEnabled() {
 			return
 		}
 
 		ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
-		winner := selectBestPresence(ctx, profileMgr, catalogMatcher, imgResolver, procs)
+		winner := selectBestPresence(ctx, profileMgr, catalogMatcher, imgResolver, cfg.Detection, procs)
 		cancel()
 
 		if winner != nil {
+			appID := cfg.ResolveDiscordApp("main")
+			if winner.Profile.DiscordApp != "" {
+				appID = cfg.ResolveDiscordApp(winner.Profile.DiscordApp)
+			}
 			if currentProfile == nil || currentProfile.Name != winner.Profile.Name {
-				log.Printf("[presence] matched %s=%q process=%q", winner.source, winner.Profile.Name, winner.proc.Name)
+				log.Printf("[presence] matched %s=%q process=%q reason=%s confidence=%d", winner.source, winner.Profile.Name, winner.proc.Name, winner.reason, winner.confidence)
 				currentProfile = winner.Profile
 				state.SetActive(winner.Profile.Name, winner.proc.Name)
-				setRichPresence(rpcMgr, winner.Profile, winner.proc)
+				setRichPresence(rpcMgr, appID, winner.Profile, winner.proc)
+				state.SetAppID(appID)
 				tray.UpdateStatus(winner.Profile.Name)
 			}
+			state.SetRPCConnected(rpcMgr.isConnected())
+			state.SetMatchInfo(profile.MatchInfo{
+				Source:       winner.source,
+				ProfileName:  winner.Profile.Name,
+				ProcessName:  winner.proc.Name,
+				Reason:       winner.reason,
+				Confidence:   winner.confidence,
+				DiscordAppID: appID,
+				RPConnected:  rpcMgr.isConnected(),
+			})
 			return
 		}
 
 		if currentProfile != nil {
-			log.Println("[presence] no match, clearing activity")
+			log.Println("[presence] no match, setting idle presence")
 			currentProfile = nil
 			state.ClearActive()
-			rpcMgr.clearActivity()
+			state.SetAppID(cfg.ResolveDiscordApp("main"))
+			if err := rpcMgr.setIdleActivity(cfg.Images.GenericAssetKey); err != nil {
+				log.Printf("Error setting idle presence: %v", err)
+			}
 			tray.UpdateStatus("Idle")
+		} else {
+			log.Printf("[presence] no match among %d process(es)", len(procs))
+			if err := rpcMgr.setIdleActivity(cfg.Images.GenericAssetKey); err != nil {
+				log.Printf("Error setting idle presence: %v", err)
+			}
 		}
+		state.SetRPCConnected(rpcMgr.isConnected())
+		state.SetMatchInfo(profile.MatchInfo{
+			Source:      "none",
+			RPConnected: rpcMgr.isConnected(),
+		})
 	})
 	procMonitor.SetDebug(debug)
 	procMonitor.Start()
@@ -351,8 +497,13 @@ func runDaemon(debug bool) int {
 				if !rpcMgr.isConnected() {
 					if _, err := rpc.DiscoverSocket(); err == nil {
 						if rerr := rpcMgr.connect(); rerr == nil {
-							log.Println("Connected to Discord")
+							log.Println("[discord] reconnected")
+							state.SetRPCConnected(true)
+						} else {
+							state.SetRPCConnected(false)
 						}
+					} else {
+						state.SetRPCConnected(false)
 					}
 				}
 			}
@@ -361,45 +512,48 @@ func runDaemon(debug bool) int {
 
 	sigCh := make(chan os.Signal, 1)
 	signal.Notify(sigCh, syscall.SIGINT, syscall.SIGTERM)
-	go func() {
+
+	if cfg.ShowTrayIcon {
+		go func() {
+			<-sigCh
+			cleanup(rpcMgr, httpServer, configMgr, procMonitor, reconnectStopCh, catalogStore, catalogRefresher)
+			releaseLock()
+			os.Exit(0)
+		}()
+
+		tray.Run(tray.Actions{
+			OpenSettings: func() {
+				settingsDialog.UpdateConfig(configMgr.Config())
+				settingsDialog.Show()
+			},
+			OpenGUI: func() {
+				tray.OpenBrowser(fmt.Sprintf("http://127.0.0.1:%d", cfg.WebPort))
+			},
+			ReloadConfig: func() {
+				newCfg, err := config.Load(configPath)
+				if err == nil {
+					applyConfig(newCfg, "tray")
+				}
+			},
+			SetAutoDetect: func(enabled bool) {
+				webServer.OnAutoDetectSet(enabled)
+			},
+			SetOverride: func(p *profile.Profile) {
+				webServer.OnOverrideSet(p)
+			},
+			ClearOverride: func() {
+				webServer.OnOverrideClear()
+			},
+			Quit: func() {
+				cleanup(rpcMgr, httpServer, configMgr, procMonitor, reconnectStopCh, catalogStore, catalogRefresher)
+				releaseLock()
+				os.Exit(0)
+			},
+		}, cfg.TrayIconPath)
+	} else {
 		<-sigCh
 		cleanup(rpcMgr, httpServer, configMgr, procMonitor, reconnectStopCh, catalogStore, catalogRefresher)
-		os.Exit(0)
-	}()
-
-	tray.Run(tray.Actions{
-		OpenGUI: func() {
-			tray.OpenBrowser(fmt.Sprintf("http://127.0.0.1:%d", cfg.WebPort))
-		},
-		ReloadConfig: func() {
-			newCfg, err := config.Load(configPath)
-			if err == nil {
-				applyConfig(newCfg, "tray")
-			}
-		},
-		SetAutoDetect: func(enabled bool) {
-			state.SetAutoDetect(enabled)
-			if !enabled {
-				rpcMgr.clearActivity()
-			}
-		},
-		SetOverride: func(p *profile.Profile) {
-			state.SetOverride(p)
-			if p != nil {
-				setRichPresence(rpcMgr, p, nil)
-			}
-		},
-		ClearOverride: func() {
-			state.SetOverride(nil)
-			currentProfile = nil
-			rpcMgr.clearActivity()
-			tray.UpdateStatus("Idle")
-		},
-		Quit: func() {
-			cleanup(rpcMgr, httpServer, configMgr, procMonitor, reconnectStopCh, catalogStore, catalogRefresher)
-			os.Exit(0)
-		},
-	})
+	}
 	return 0
 }
 
@@ -415,28 +569,7 @@ func configDirPath() string {
 }
 
 func defaultConfig() config.AppConfig {
-	return config.AppConfig{
-		AppID:            config.DefaultDiscordAppID,
-		PollInterval:     2,
-		WebPort:          17970,
-		ScanAllProcesses: true,
-		Catalog: config.CatalogConfig{
-			Enabled:      true,
-			AutoRefresh:  true,
-			Sources:      config.DefaultCatalogSources,
-			RefreshHours: 24,
-		},
-		Images: config.ImageConfig{
-			Mode:              "external_url",
-			CacheEnabled:      true,
-			MaxCacheMB:        512,
-			GenericAssetKey:   "picord",
-			ExternalValidated: true,
-		},
-		DiscordApps: map[string]config.DiscordApp{
-			"main": {ID: config.DefaultDiscordAppID, Name: "Picord"},
-		},
-	}
+	return config.DefaultConfig()
 }
 
 func findBestCatalogMatch(
@@ -448,20 +581,20 @@ func findBestCatalogMatch(
 	var bestProc *profile.DetectedProcess
 	for i := range procs {
 		result := matcher.Match(ctx, procs[i])
-		if result != nil {
-			if best == nil || result.Confidence > best.Confidence {
-				best = result
-				bestProc = &procs[i]
-			}
+		if result != nil && result.IsBetterThan(best) {
+			best = result
+			bestProc = &procs[i]
 		}
 	}
 	return best, bestProc
 }
 
 type presenceWinner struct {
-	Profile *profile.Profile
-	proc    *profile.DetectedProcess
-	source  string
+	Profile    *profile.Profile
+	proc       *profile.DetectedProcess
+	source     string
+	reason     string
+	confidence int
 }
 
 func selectBestPresence(
@@ -469,6 +602,7 @@ func selectBestPresence(
 	profileMgr *profile.Manager,
 	catalogMatcher *catalog.Matcher,
 	imgResolver catalog.ImageResolver,
+	detection config.DetectionConfig,
 	procs []profile.DetectedProcess,
 ) *presenceWinner {
 	profileMatch, profileProc := profileMgr.Match(procs)
@@ -477,6 +611,27 @@ func selectBestPresence(
 	var catProc *profile.DetectedProcess
 	if catalogMatcher != nil {
 		catResult, catProc = findBestCatalogMatch(ctx, catalogMatcher, procs)
+		// Final safety net: reject catalog matches for excluded apps (browsers,
+		// Discord, file managers) even if they somehow entered the catalog.
+		if catResult != nil && isExcludedCatalogEntry(catResult.Entry.Title) {
+			catResult = nil
+			catProc = nil
+		}
+		// Apply detection filters.
+		if catResult != nil {
+			switch catResult.Entry.Kind {
+			case catalog.EntryKindGame:
+				if !detection.ShowGames {
+					catResult = nil
+					catProc = nil
+				}
+			case catalog.EntryKindApplication:
+				if !detection.ShowTools {
+					catResult = nil
+					catProc = nil
+				}
+			}
+		}
 	}
 
 	if profileMatch == nil && catResult == nil {
@@ -484,10 +639,16 @@ func selectBestPresence(
 	}
 	if profileMatch == nil {
 		p := catResult.ToProfile(imgResolver)
-		return &presenceWinner{Profile: &p, proc: catProc, source: "catalog"}
+		return &presenceWinner{
+			Profile: &p, proc: catProc, source: "catalog",
+			reason: catResult.Reason, confidence: catResult.Confidence,
+		}
 	}
 	if catResult == nil {
-		return &presenceWinner{Profile: profileMatch, proc: profileProc, source: "profile"}
+		return &presenceWinner{
+			Profile: profileMatch, proc: profileProc, source: "profile",
+			reason: string(profileMatch.Match.Type), confidence: profileMatch.Priority,
+		}
 	}
 
 	// Both matched: compare scores on a 0-100 scale.
@@ -500,9 +661,56 @@ func selectBestPresence(
 
 	if catalogScore > profileScore {
 		p := catResult.ToProfile(imgResolver)
-		return &presenceWinner{Profile: &p, proc: catProc, source: "catalog"}
+		return &presenceWinner{
+			Profile: &p, proc: catProc, source: "catalog",
+			reason: catResult.Reason, confidence: catResult.Confidence,
+		}
 	}
-	return &presenceWinner{Profile: profileMatch, proc: profileProc, source: "profile"}
+	return &presenceWinner{
+		Profile: profileMatch, proc: profileProc, source: "profile",
+		reason: string(profileMatch.Match.Type), confidence: profileMatch.Priority,
+	}
+}
+
+// isExcludedCatalogEntry returns true for catalog entry titles that should never
+// be shown as Rich Presence: browsers, Discord, file managers, etc.
+func isExcludedCatalogEntry(title string) bool {
+	lower := strings.ToLower(title)
+	excludedTitles := []string{
+		"discord", "discord canary", "discord ptb", "discord development",
+		"firefox", "firefox esr", "firefox developer edition",
+		"firefox nightly", "firefox beta",
+		"librewolf", "waterfox", "floorp", "palemoon", "basilisk",
+		"icecat", "seamonkey",
+		"google chrome", "google-chrome", "chromium", "chromium browser",
+		"brave", "brave browser", "opera", "microsoft edge", "vivaldi",
+		"thorium", "iridium", "ungoogled-chromium",
+		"epiphany", "falkon", "midori", "qutebrowser",
+		"konqueror", "luakit", "surf", "nyxt", "lagrange", "badwolf",
+		"netsurf", "dooble", "tor browser", "torbrowser",
+		"zen", "zen browser",
+		"dolphin", "nautilus", "nemo", "thunar", "pcmanfm",
+		"caja", "spacefm", "krusader", "doublecmd",
+		"xfdesktop", "plasmashell", "gnome-shell", "cinnamon",
+		// Launchers (safety net — desktop source now filters these)
+		"steam", "steam linux", "steam runtime", "steam web helper",
+		"epic games launcher", "epicgameslauncher", "heroic games launcher",
+		"lutris", "gog galaxy", "itch.io", "itch", "bottles", "playnite",
+		// Terminal emulators
+		"kitty", "alacritty", "wezterm", "foot", "gnome terminal",
+		"konsole", "xfce4-terminal", "lxterminal", "terminator",
+		"tilix", "guake", "yakuake", "tilda", "qterminal",
+		"st", "xterm", "urxvt", "rxvt", "eterm",
+		"hyper", "tabby", "warp", "rio",
+		// Shells
+		"bash", "zsh", "fish", "sh", "dash", "csh", "tcsh",
+	}
+	for _, e := range excludedTitles {
+		if lower == e {
+			return true
+		}
+	}
+	return false
 }
 
 func buildRichActivity(p *profile.Profile, proc *profile.DetectedProcess) *rpc.RichActivity {
@@ -540,7 +748,10 @@ func buildRichActivity(p *profile.Profile, proc *profile.DetectedProcess) *rpc.R
 	return activity
 }
 
-func setRichPresence(rm *rpcManager, p *profile.Profile, proc *profile.DetectedProcess) {
+func setRichPresence(rm *rpcManager, appID string, p *profile.Profile, proc *profile.DetectedProcess) {
+	if err := rm.switchApp(appID); err != nil {
+		log.Printf("Error switching Discord app: %v", err)
+	}
 	activity := buildRichActivity(p, proc)
 
 	// Always store the desired activity so it can be replayed on reconnect.
@@ -575,4 +786,30 @@ func cleanup(rm *rpcManager, httpServer *http.Server, configMgr *config.Manager,
 		catalogStore.Close()
 	}
 	log.Println("Picord stopped")
+}
+
+func acquireLock(pidFile string) (func(), error) {
+	if err := os.MkdirAll(filepath.Dir(pidFile), 0755); err != nil {
+		return nil, fmt.Errorf("create state dir: %w", err)
+	}
+
+	data, err := os.ReadFile(pidFile)
+	if err == nil {
+		pid, err := strconv.Atoi(strings.TrimSpace(string(data)))
+		if err == nil && pid > 0 {
+			if process, err := os.FindProcess(pid); err == nil {
+				if err := process.Signal(syscall.Signal(0)); err == nil {
+					return nil, fmt.Errorf("%d", pid)
+				}
+			}
+		}
+	}
+
+	if err := os.WriteFile(pidFile, []byte(strconv.Itoa(os.Getpid())+"\n"), 0644); err != nil {
+		return nil, fmt.Errorf("write pid file: %w", err)
+	}
+
+	return func() {
+		os.Remove(pidFile)
+	}, nil
 }

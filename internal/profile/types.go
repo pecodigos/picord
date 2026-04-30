@@ -1,5 +1,7 @@
 package profile
 
+import "regexp"
+
 type MatchType string
 
 const (
@@ -16,7 +18,8 @@ type Profile struct {
 	Enabled    bool      `yaml:"enabled" json:"enabled"`
 	DiscordApp string    `yaml:"discord_app,omitempty" json:"discord_app,omitempty"`
 
-	isDefault bool `yaml:"-" json:"-"`
+	isDefault  bool           `yaml:"-" json:"-"`
+	regexCache *regexp.Regexp `yaml:"-" json:"-"`
 }
 
 func (p *Profile) IsDefault() bool   { return p.isDefault }

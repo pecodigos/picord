@@ -420,7 +420,7 @@ func TestSetRichPresence_StoresDesiredWhenDisconnected(t *testing.T) {
 			LargeImage: "test_image",
 		},
 	}
-	setRichPresence(rm, p, nil)
+	setRichPresence(rm, "test-app", p, nil)
 
 	rm.mu.Lock()
 	desired := rm.desiredActivity
@@ -464,7 +464,7 @@ func TestSelectBestPresence_CatalogBeatsBroadProfile(t *testing.T) {
 		{PID: 2, Name: "portal2", SteamAppID: "620"},
 	}
 
-	winner := selectBestPresence(ctx, pm, matcher, catalog.ImageResolver{}, procs)
+	winner := selectBestPresence(ctx, pm, matcher, catalog.ImageResolver{}, config.DetectionConfig{ShowGames: true, ShowTools: true}, procs)
 	if winner == nil {
 		t.Fatal("expected a winner")
 	}
@@ -499,7 +499,7 @@ func TestSelectBestPresence_ProfileBeatsLowConfidenceCatalog(t *testing.T) {
 		{PID: 1, Name: "doom"},
 	}
 
-	winner := selectBestPresence(ctx, pm, matcher, catalog.ImageResolver{}, procs)
+	winner := selectBestPresence(ctx, pm, matcher, catalog.ImageResolver{}, config.DetectionConfig{ShowGames: true, ShowTools: true}, procs)
 	if winner == nil {
 		t.Fatal("expected a winner")
 	}
@@ -534,7 +534,7 @@ func TestSelectBestPresence_TiePrefersProfile(t *testing.T) {
 		{PID: 2, Name: "portal2", SteamAppID: "620"},
 	}
 
-	winner := selectBestPresence(ctx, pm, matcher, catalog.ImageResolver{}, procs)
+	winner := selectBestPresence(ctx, pm, matcher, catalog.ImageResolver{}, config.DetectionConfig{ShowGames: true, ShowTools: true}, procs)
 	if winner == nil {
 		t.Fatal("expected a winner")
 	}
@@ -546,7 +546,7 @@ func TestSelectBestPresence_TiePrefersProfile(t *testing.T) {
 func TestSelectBestPresence_NoMatches(t *testing.T) {
 	pm := profile.NewManager(nil, nil)
 	procs := []profile.DetectedProcess{{PID: 1, Name: "unknown"}}
-	winner := selectBestPresence(context.Background(), pm, nil, catalog.ImageResolver{}, procs)
+	winner := selectBestPresence(context.Background(), pm, nil, catalog.ImageResolver{}, config.DetectionConfig{ShowGames: true, ShowTools: true}, procs)
 	if winner != nil {
 		t.Errorf("expected no winner, got %+v", winner)
 	}
@@ -590,5 +590,70 @@ func TestDebugProcessNameMatchesAliases(t *testing.T) {
 	}
 	if debugProcessNameMatches(proc, "firefox") {
 		t.Fatal("did not expect unrelated query to match")
+	}
+}
+
+func TestIsExcludedCatalogEntry(t *testing.T) {
+	excluded := []string{
+		"Firefox", "firefox", "Google Chrome", "Discord", "Discord Canary",
+		"Microsoft Edge", "Vivaldi", "dolphin", "nautilus",
+	}
+	for _, title := range excluded {
+		if !isExcludedCatalogEntry(title) {
+			t.Errorf("expected %q to be excluded", title)
+		}
+	}
+
+	included := []string{
+		"Hollow Knight", "Celeste", "Portal 2", "DOOM Eternal",
+		"Stardew Valley", "osu!",
+	}
+	for _, title := range included {
+		if isExcludedCatalogEntry(title) {
+			t.Errorf("expected %q to NOT be excluded", title)
+		}
+	}
+}
+
+func TestSelectBestPresence_RejectsExcludedCatalogEntry(t *testing.T) {
+	dir := t.TempDir()
+	store, err := catalog.Open(filepath.Join(dir, "catalog.db"))
+	if err != nil {
+		t.Fatalf("Open failed: %v", err)
+	}
+	defer store.Close()
+
+	ctx := context.Background()
+	// Insert a Firefox catalog entry.
+	if err := store.UpsertEntry(ctx, catalog.Entry{
+		ID: "desktop:firefox", Source: "desktop", SourceID: "firefox",
+		Kind: catalog.EntryKindApplication, Title: "Firefox",
+		NormalizedTitle: catalog.NormalizeTitle("Firefox"),
+		UpdatedAt:       time.Now(),
+	}, []catalog.Alias{
+		{EntryID: "desktop:firefox", Kind: catalog.AliasTitle, Value: "Firefox", Normalized: catalog.NormalizeTitle("Firefox"), Confidence: 90},
+		{EntryID: "desktop:firefox", Kind: catalog.AliasExecutable, Value: "firefox", Normalized: catalog.NormalizeTitle("firefox"), Confidence: 80},
+	}); err != nil {
+		t.Fatalf("UpsertEntry failed: %v", err)
+	}
+
+	pm := profile.NewManager(nil, nil)
+	pm.Add(profile.Profile{Name: "My Game", Match: profile.MatchRule{Type: profile.MatchProcessName, Value: "firefox"}, Priority: 5})
+	matcher := catalog.NewMatcher(store)
+
+	// A process named "firefox" should match the profile, NOT the excluded catalog entry.
+	procs := []profile.DetectedProcess{
+		{PID: 1, Name: "firefox"},
+	}
+
+	winner := selectBestPresence(ctx, pm, matcher, catalog.ImageResolver{}, config.DetectionConfig{ShowGames: true, ShowTools: true}, procs)
+	if winner == nil {
+		t.Fatal("expected a winner")
+	}
+	if winner.source != "profile" {
+		t.Errorf("expected profile to win because catalog entry is excluded, got %s", winner.source)
+	}
+	if winner.Profile.Name != "My Game" {
+		t.Errorf("expected My Game profile, got %q", winner.Profile.Name)
 	}
 }

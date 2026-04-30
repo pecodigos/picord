@@ -11,28 +11,69 @@ import (
 	"path/filepath"
 	"strings"
 	"sync"
+	"time"
 
 	"github.com/pecodigos/picord/internal/catalog"
+	"github.com/pecodigos/picord/internal/config"
 	"github.com/pecodigos/picord/internal/profile"
 )
 
 //go:embed all:web
 var webAssets embed.FS
 
+type ScanMode string
+
+const (
+	ScanModeAll           ScanMode = "all_processes"
+	ScanModeIPCCandidates ScanMode = "ipc_candidates"
+)
+
+type ScanState string
+
+const (
+	ScanStatePending ScanState = "pending"
+	ScanStateScanned ScanState = "scanned"
+	ScanStateError   ScanState = "error"
+)
+
+type ScanSnapshot struct {
+	Procs []profile.DetectedProcess
+	Time  time.Time
+	Mode  ScanMode
+	State ScanState
+}
+
 type AppState struct {
-	mu            sync.RWMutex
-	activeName    string
-	activeProc    string
-	detectedProcs []profile.DetectedProcess
-	override      *profile.Profile
-	autoDetect    bool
-	lastScanTime  string // RFC3339
+	mu           sync.RWMutex
+	activeName   string
+	activeProc   string
+	snapshot     ScanSnapshot
+	matchInfo    profile.MatchInfo
+	override     *profile.Profile
+	autoDetect   bool
+	rpcConnected bool
+	appID        string
 }
 
 func NewAppState() *AppState {
 	return &AppState{
 		autoDetect: true,
+		snapshot: ScanSnapshot{
+			State: ScanStatePending,
+		},
 	}
+}
+
+func (s *AppState) SetRPCConnected(v bool) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.rpcConnected = v
+}
+
+func (s *AppState) SetAppID(id string) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.appID = id
 }
 
 func (s *AppState) SetActive(name, proc string) {
@@ -49,16 +90,28 @@ func (s *AppState) ClearActive() {
 	s.activeProc = ""
 }
 
-func (s *AppState) SetDetected(procs []profile.DetectedProcess) {
+func (s *AppState) SetScanSnapshot(ss ScanSnapshot) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	s.detectedProcs = procs
+	s.snapshot = ss
 }
 
-func (s *AppState) SetLastScanTime(t string) {
+func (s *AppState) ScanSnapshot() ScanSnapshot {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	return s.snapshot
+}
+
+func (s *AppState) SetMatchInfo(mi profile.MatchInfo) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	s.lastScanTime = t
+	s.matchInfo = mi
+}
+
+func (s *AppState) MatchInfo() profile.MatchInfo {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	return s.matchInfo
 }
 
 func (s *AppState) AutoDetectEnabled() bool {
@@ -86,20 +139,27 @@ func (s *AppState) SetOverride(p *profile.Profile) {
 }
 
 type Server struct {
-	state          *AppState
-	profileManager *profile.Manager
-	catalogStore   *catalog.Store
-	token          string
+	state            *AppState
+	profileManager   *profile.Manager
+	catalogStore     *catalog.Store
+	catalogEnricher  *catalog.Enricher
+	settingsProvider func() config.AppConfig
+	token            string
 
 	OnOverrideSet   func(*profile.Profile)
 	OnOverrideClear func()
 	OnAutoDetectSet func(bool)
+	OnSettingsSaved func(config.AppConfig) error
 	OnReloadConfig  func()
 	OnProfilesSaved func([]profile.Profile)
 }
 
 func (srv *Server) SetToken(t string) {
 	srv.token = t
+}
+
+func (srv *Server) SetCatalogEnricher(e *catalog.Enricher) {
+	srv.catalogEnricher = e
 }
 
 type sanitizedProcess struct {
@@ -135,7 +195,12 @@ type statusResponse struct {
 	DetectedProcs []sanitizedProcess `json:"detected_processes"`
 	AutoDetect    bool               `json:"auto_detect"`
 	HasOverride   bool               `json:"has_override"`
+	ScanState     string             `json:"scan_state"`
+	ScanMode      string             `json:"scan_mode,omitempty"`
 	LastScanTime  string             `json:"last_scan_time,omitempty"`
+	MatchInfo     *profile.MatchInfo `json:"match_info,omitempty"`
+	RPCConnected  bool               `json:"rpc_connected"`
+	AppID         string             `json:"app_id,omitempty"`
 }
 
 func New(s *AppState, pm *profile.Manager, cs *catalog.Store) *Server {
@@ -144,6 +209,10 @@ func New(s *AppState, pm *profile.Manager, cs *catalog.Store) *Server {
 		profileManager: pm,
 		catalogStore:   cs,
 	}
+}
+
+func (srv *Server) SetSettingsProvider(fn func() config.AppConfig) {
+	srv.settingsProvider = fn
 }
 
 func (srv *Server) Handler() http.Handler {
@@ -182,6 +251,7 @@ func (srv *Server) Handler() http.Handler {
 	mux.HandleFunc("/api/catalog/search", srv.handleCatalogSearch)
 	mux.HandleFunc("/api/catalog/entries/", srv.handleCatalogEntry)
 	mux.HandleFunc("/api/catalog/refresh", srv.handleCatalogRefresh)
+	mux.HandleFunc("/api/catalog/enrich", srv.handleCatalogEnrich)
 	mux.HandleFunc("/api/catalog/profiles/from-entry/", srv.handleCatalogProfileFromEntry)
 
 	// Serve local assets (game images, etc.) from the filesystem.
@@ -212,20 +282,31 @@ func AssetsDir() string {
 
 func (srv *Server) handleStatus(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodGet {
-		http.Error(w, "method not allowed", 405)
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 		return
 	}
 
 	verbose := r.URL.Query().Get("verbose") == "1"
 
 	srv.state.mu.RLock()
+	ss := srv.state.snapshot
+	mi := srv.state.matchInfo
 	resp := statusResponse{
 		ActiveName:    srv.state.activeName,
 		ActiveProcess: srv.state.activeProc,
-		DetectedProcs: sanitizeDetected(srv.state.detectedProcs, verbose),
+		DetectedProcs: sanitizeDetected(ss.Procs, verbose),
 		AutoDetect:    srv.state.autoDetect,
 		HasOverride:   srv.state.override != nil,
-		LastScanTime:  srv.state.lastScanTime,
+		ScanState:     string(ss.State),
+		ScanMode:      string(ss.Mode),
+		RPCConnected:  srv.state.rpcConnected,
+		AppID:         srv.state.appID,
+	}
+	if !ss.Time.IsZero() {
+		resp.LastScanTime = ss.Time.Format(time.RFC3339)
+	}
+	if verbose && mi.Source != "" {
+		resp.MatchInfo = &mi
 	}
 	srv.state.mu.RUnlock()
 	writeJSON(w, resp)
@@ -265,7 +346,7 @@ func (srv *Server) handleProfiles(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, map[string]string{"status": "ok"})
 
 	default:
-		http.Error(w, "method not allowed", 405)
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 	}
 }
 
@@ -291,8 +372,15 @@ func (srv *Server) handleProfileByID(w http.ResponseWriter, r *http.Request) {
 			writeError(w, "invalid profile JSON", 400)
 			return
 		}
-		p.Name = name
-		srv.profileManager.Add(p)
+		// Support rename: if the request body name differs from the URL name,
+		// delete the old profile and add the new one.
+		if p.Name != "" && p.Name != name {
+			srv.profileManager.Delete(name)
+			srv.profileManager.Replace(p)
+		} else {
+			p.Name = name
+			srv.profileManager.Replace(p)
+		}
 		srv.notifyProfilesChanged()
 		writeJSON(w, map[string]string{"status": "ok"})
 
@@ -305,13 +393,13 @@ func (srv *Server) handleProfileByID(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, map[string]string{"status": "ok"})
 
 	default:
-		http.Error(w, "method not allowed", 405)
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 	}
 }
 
 func (srv *Server) handleDefaults(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodGet {
-		http.Error(w, "method not allowed", 405)
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 		return
 	}
 	defaults := profile.DefaultProfiles()
@@ -338,38 +426,104 @@ func (srv *Server) handleOverride(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, map[string]string{"status": "ok"})
 
 	default:
-		http.Error(w, "method not allowed", 405)
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+	}
+}
+
+type settingsResponse struct {
+	AutoDetect       bool                   `json:"auto_detect"`
+	ScanAllProcesses bool                   `json:"scan_all_processes"`
+	ShowTrayIcon     bool                   `json:"show_tray_icon"`
+	Catalog          config.CatalogConfig   `json:"catalog"`
+	Images           config.ImageConfig     `json:"images"`
+	Detection        config.DetectionConfig `json:"detection"`
+}
+
+type settingsPatch struct {
+	AutoDetect       *bool                   `json:"auto_detect"`
+	ScanAllProcesses *bool                   `json:"scan_all_processes"`
+	ShowTrayIcon     *bool                   `json:"show_tray_icon"`
+	Catalog          *config.CatalogConfig   `json:"catalog"`
+	Images           *config.ImageConfig     `json:"images"`
+	Detection        *config.DetectionConfig `json:"detection"`
+}
+
+func (srv *Server) currentConfig() config.AppConfig {
+	if srv.settingsProvider != nil {
+		return srv.settingsProvider()
+	}
+	return config.DefaultConfig()
+}
+
+func settingsFromConfig(cfg config.AppConfig, autoDetect bool) settingsResponse {
+	catalogCfg := cfg.Catalog
+	// Do not expose secrets back through the browser-facing settings API.
+	catalogCfg.SteamGridDBAPIKey = ""
+	return settingsResponse{
+		AutoDetect:       autoDetect,
+		ScanAllProcesses: cfg.ScanAllProcesses,
+		ShowTrayIcon:     cfg.ShowTrayIcon,
+		Catalog:          catalogCfg,
+		Images:           cfg.Images,
+		Detection:        cfg.Detection,
 	}
 }
 
 func (srv *Server) handleSettings(w http.ResponseWriter, r *http.Request) {
 	switch r.Method {
 	case http.MethodGet:
-		writeJSON(w, map[string]any{
-			"auto_detect": srv.state.AutoDetectEnabled(),
-		})
+		writeJSON(w, settingsFromConfig(srv.currentConfig(), srv.state.AutoDetectEnabled()))
 
 	case http.MethodPut:
-		var settings map[string]any
-		if err := json.NewDecoder(r.Body).Decode(&settings); err != nil {
+		var patch settingsPatch
+		if err := json.NewDecoder(r.Body).Decode(&patch); err != nil {
 			writeError(w, "invalid JSON", 400)
 			return
 		}
-		if ad, ok := settings["auto_detect"]; ok {
-			if v, ok := ad.(bool); ok && srv.OnAutoDetectSet != nil {
-				srv.OnAutoDetectSet(v)
+
+		cfg := srv.currentConfig()
+		if patch.ScanAllProcesses != nil {
+			cfg.ScanAllProcesses = *patch.ScanAllProcesses
+		}
+		if patch.ShowTrayIcon != nil {
+			cfg.ShowTrayIcon = *patch.ShowTrayIcon
+		}
+		if patch.Catalog != nil {
+			secret := cfg.Catalog.SteamGridDBAPIKey
+			cfg.Catalog = *patch.Catalog
+			if cfg.Catalog.SteamGridDBAPIKey == "" {
+				cfg.Catalog.SteamGridDBAPIKey = secret
 			}
 		}
-		writeJSON(w, map[string]string{"status": "ok"})
+		if patch.Images != nil {
+			cfg.Images = *patch.Images
+		}
+		if patch.Detection != nil {
+			cfg.Detection = *patch.Detection
+		}
+		if srv.OnSettingsSaved != nil {
+			if err := srv.OnSettingsSaved(cfg); err != nil {
+				writeError(w, err.Error(), 500)
+				return
+			}
+		}
+		if patch.AutoDetect != nil {
+			if srv.OnAutoDetectSet != nil {
+				srv.OnAutoDetectSet(*patch.AutoDetect)
+			} else {
+				srv.state.SetAutoDetect(*patch.AutoDetect)
+			}
+		}
+		writeJSON(w, settingsFromConfig(cfg, srv.state.AutoDetectEnabled()))
 
 	default:
-		http.Error(w, "method not allowed", 405)
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 	}
 }
 
 func (srv *Server) handleReload(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
-		http.Error(w, "method not allowed", 405)
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 		return
 	}
 	if srv.OnReloadConfig != nil {
@@ -394,7 +548,7 @@ func (srv *Server) notifyProfilesChanged() {
 
 func (srv *Server) handleCatalogStatus(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodGet {
-		http.Error(w, "method not allowed", 405)
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 		return
 	}
 	if srv.catalogStore == nil {
@@ -413,7 +567,7 @@ func (srv *Server) handleCatalogStatus(w http.ResponseWriter, r *http.Request) {
 
 func (srv *Server) handleCatalogSearch(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodGet {
-		http.Error(w, "method not allowed", 405)
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 		return
 	}
 	if srv.catalogStore == nil {
@@ -439,7 +593,7 @@ func (srv *Server) handleCatalogSearch(w http.ResponseWriter, r *http.Request) {
 
 func (srv *Server) handleCatalogEntry(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodGet {
-		http.Error(w, "method not allowed", 405)
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 		return
 	}
 	if srv.catalogStore == nil {
@@ -489,7 +643,7 @@ type refreshRequest struct {
 
 func (srv *Server) handleCatalogRefresh(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
-		http.Error(w, "method not allowed", 405)
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 		return
 	}
 	if srv.catalogStore == nil {
@@ -529,9 +683,48 @@ func (srv *Server) handleCatalogRefresh(w http.ResponseWriter, r *http.Request) 
 	writeJSON(w, map[string]string{"status": "ok"})
 }
 
+type enrichRequest struct {
+	BatchSize int `json:"batch_size"`
+}
+
+type enrichResponse struct {
+	Status   string `json:"status"`
+	Enriched int    `json:"enriched"`
+	Enabled  bool   `json:"enabled"`
+	Message  string `json:"message,omitempty"`
+}
+
+func (srv *Server) handleCatalogEnrich(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+	if srv.catalogStore == nil {
+		writeError(w, "catalog disabled", 503)
+		return
+	}
+	if srv.catalogEnricher == nil || !srv.catalogEnricher.Enabled() {
+		writeJSON(w, enrichResponse{Status: "ok", Enabled: false, Message: "SteamGridDB API key not configured"})
+		return
+	}
+
+	var req enrichRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		writeError(w, "invalid JSON", 400)
+		return
+	}
+
+	enriched, err := srv.catalogEnricher.EnrichMissingImages(r.Context(), req.BatchSize)
+	if err != nil {
+		writeJSON(w, enrichResponse{Status: "error", Enabled: true, Enriched: enriched, Message: err.Error()})
+		return
+	}
+	writeJSON(w, enrichResponse{Status: "ok", Enabled: true, Enriched: enriched})
+}
+
 func (srv *Server) handleCatalogProfileFromEntry(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
-		http.Error(w, "method not allowed", 405)
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 		return
 	}
 	if srv.catalogStore == nil {
@@ -553,12 +746,19 @@ func (srv *Server) handleCatalogProfileFromEntry(w http.ResponseWriter, r *http.
 		return
 	}
 
+	match := profile.MatchRule{Type: profile.MatchProcessName, Value: entry.Title}
+	if aliases, err := srv.catalogStore.AliasesForEntry(r.Context(), entry.ID); err == nil {
+		for _, a := range aliases {
+			if a.Kind == catalog.AliasExecutable && a.Value != "" {
+				match.Value = a.Value
+				break
+			}
+		}
+	}
+
 	p := profile.Profile{
-		Name: entry.Title,
-		Match: profile.MatchRule{
-			Type:  profile.MatchProcessName,
-			Value: catalog.NormalizeTitle(entry.Title),
-		},
+		Name:  entry.Title,
+		Match: match,
 		Activity: profile.Activity{
 			Details:    "Playing " + entry.Title,
 			LargeImage: "",

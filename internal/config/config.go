@@ -13,10 +13,11 @@ import (
 )
 
 type CatalogConfig struct {
-	Enabled      bool     `yaml:"enabled" json:"enabled"`
-	AutoRefresh  bool     `yaml:"auto_refresh" json:"auto_refresh"`
-	Sources      []string `yaml:"sources" json:"sources"`
-	RefreshHours int      `yaml:"refresh_hours" json:"refresh_hours"`
+	Enabled          bool     `yaml:"enabled" json:"enabled"`
+	AutoRefresh      bool     `yaml:"auto_refresh" json:"auto_refresh"`
+	Sources          []string `yaml:"sources" json:"sources"`
+	RefreshHours     int      `yaml:"refresh_hours" json:"refresh_hours"`
+	SteamGridDBAPIKey string  `yaml:"steamgriddb_api_key,omitempty" json:"steamgriddb_api_key,omitempty"`
 }
 
 type ImageConfig struct {
@@ -25,6 +26,11 @@ type ImageConfig struct {
 	MaxCacheMB        int    `yaml:"max_cache_mb" json:"max_cache_mb"`
 	GenericAssetKey   string `yaml:"generic_asset_key" json:"generic_asset_key"`
 	ExternalValidated bool   `yaml:"external_validated" json:"external_validated"`
+}
+
+type DetectionConfig struct {
+	ShowGames bool `yaml:"show_games" json:"show_games"`
+	ShowTools bool `yaml:"show_tools" json:"show_tools"`
 }
 
 type DiscordApp struct {
@@ -37,9 +43,12 @@ type AppConfig struct {
 	PollInterval     int                   `yaml:"poll_interval" json:"poll_interval"`
 	WebPort          int                   `yaml:"web_port" json:"web_port"`
 	ScanAllProcesses bool                  `yaml:"scan_all_processes" json:"scan_all_processes"`
+	ShowTrayIcon     bool                  `yaml:"show_tray_icon" json:"show_tray_icon"`
+	TrayIconPath     string                `yaml:"tray_icon_path,omitempty" json:"tray_icon_path,omitempty"`
 	Profiles         []profile.Profile     `yaml:"profiles" json:"profiles"`
 	Catalog          CatalogConfig         `yaml:"catalog" json:"catalog"`
 	Images           ImageConfig           `yaml:"images" json:"images"`
+	Detection        DetectionConfig       `yaml:"detection" json:"detection"`
 	DiscordApps      map[string]DiscordApp `yaml:"discord_apps,omitempty" json:"discord_apps,omitempty"`
 }
 
@@ -52,6 +61,7 @@ var defaultConfig = AppConfig{
 	PollInterval:     2,
 	WebPort:          17970,
 	ScanAllProcesses: true,
+	ShowTrayIcon:     true,
 	Profiles:         []profile.Profile{},
 	Catalog: CatalogConfig{
 		Enabled:      true,
@@ -66,6 +76,10 @@ var defaultConfig = AppConfig{
 		GenericAssetKey:   "picord",
 		ExternalValidated: true,
 	},
+	Detection: DetectionConfig{
+		ShowGames: true,
+		ShowTools: true,
+	},
 	DiscordApps: map[string]DiscordApp{
 		"main": {ID: DefaultDiscordAppID, Name: "Picord"},
 	},
@@ -79,6 +93,10 @@ func defaultConfigCopy() AppConfig {
 		cfg.DiscordApps[key] = app
 	}
 	return cfg
+}
+
+func DefaultConfig() AppConfig {
+	return defaultConfigCopy()
 }
 
 func defaultConfigForUnmarshal() AppConfig {

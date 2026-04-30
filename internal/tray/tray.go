@@ -2,6 +2,7 @@ package tray
 
 import (
 	_ "embed"
+	"os"
 	"os/exec"
 
 	"github.com/energye/systray"
@@ -13,6 +14,7 @@ import (
 var iconData []byte
 
 type Actions struct {
+	OpenSettings  func()
 	OpenGUI       func()
 	ReloadConfig  func()
 	SetAutoDetect func(bool)
@@ -26,16 +28,26 @@ var (
 	statusItem     *systray.MenuItem
 )
 
-func Run(actions Actions) {
-	systray.Run(func() { onReady(actions) }, func() {
+func Run(actions Actions, iconPath string) {
+	systray.Run(func() { onReady(actions, iconPath) }, func() {
 		if actions.Quit != nil {
 			actions.Quit()
 		}
 	})
 }
 
-func onReady(actions Actions) {
-	systray.SetIcon(iconData)
+func loadIcon(path string) []byte {
+	if path != "" {
+		data, err := os.ReadFile(path)
+		if err == nil && len(data) > 0 {
+			return data
+		}
+	}
+	return iconData
+}
+
+func onReady(actions Actions, iconPath string) {
+	systray.SetIcon(loadIcon(iconPath))
 	systray.SetTitle("Picord")
 	systray.SetTooltip("Picord - Discord Rich Presence Manager")
 
@@ -63,8 +75,13 @@ func onReady(actions Actions) {
 
 	systray.AddSeparator()
 
-	openGUIItem := systray.AddMenuItem("Open Settings", "Open web configuration")
-	openGUIItem.Click(func() {
+	settingsItem := systray.AddMenuItem("Settings", "Open settings dialog")
+	settingsItem.Click(func() {
+		actions.OpenSettings()
+	})
+
+	guiItem := systray.AddMenuItem("Open Web GUI", "Open web interface")
+	guiItem.Click(func() {
 		actions.OpenGUI()
 	})
 

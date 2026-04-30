@@ -103,6 +103,19 @@ func EnrichProcessTable(pt *ProcessTable, pids []int) {
 	}
 }
 
+// EnrichProcessEnvOnly reads only the allowlisted environment for the given
+// PIDs and populates EnvHints and SteamAppID. This is cheaper than a full
+// enrichment and is used for same-PGID peer gating in scanAll=false mode.
+func EnrichProcessEnvOnly(pt *ProcessTable, pids []int) {
+	for _, pid := range pids {
+		if info := pt.ByPID[pid]; info != nil {
+			procPath := filepath.Join(procRoot, fmt.Sprintf("%d", pid))
+			info.EnvHints = readProcEnvHints(procPath)
+			info.SteamAppID = ExtractSteamAppID(nil, info.EnvHints)
+		}
+	}
+}
+
 func readProcessInfo(pid int) *ProcessInfo {
 	info := readProcessInfoLite(pid)
 	if info == nil {
@@ -136,7 +149,8 @@ func enrichProcessInfo(info *ProcessInfo) {
 
 	// exe symlink
 	if p, err := os.Readlink(filepath.Join(procPath, "exe")); err == nil {
-		info.ExePath = p
+		// Linux appends " (deleted)" when the executable is updated/replaced.
+		info.ExePath = strings.TrimSuffix(p, " (deleted)")
 	}
 
 	// cwd symlink

@@ -240,6 +240,85 @@ func TestStore_SourceState(t *testing.T) {
 	}
 }
 
+func TestStore_EntriesMissingImages(t *testing.T) {
+	dir := t.TempDir()
+	store, err := Open(filepath.Join(dir, "catalog.db"))
+	if err != nil {
+		t.Fatalf("Open failed: %v", err)
+	}
+	defer store.Close()
+
+	ctx := context.Background()
+	entries := []Entry{
+		{ID: "a", Source: "test", SourceID: "1", Kind: EntryKindGame, Title: "Alpha", NormalizedTitle: NormalizeTitle("Alpha"), ImageURL: "", UpdatedAt: time.Now()},
+		{ID: "b", Source: "test", SourceID: "2", Kind: EntryKindGame, Title: "Beta", NormalizedTitle: NormalizeTitle("Beta"), ImageURL: "http://example.com/b.jpg", UpdatedAt: time.Now()},
+		{ID: "c", Source: "test", SourceID: "3", Kind: EntryKindGame, Title: "Gamma", NormalizedTitle: NormalizeTitle("Gamma"), ImageURL: "", UpdatedAt: time.Now()},
+	}
+	for _, e := range entries {
+		if err := store.UpsertEntry(ctx, e, nil); err != nil {
+			t.Fatalf("UpsertEntry failed: %v", err)
+		}
+	}
+
+	missing, err := store.EntriesMissingImages(ctx, 10)
+	if err != nil {
+		t.Fatalf("EntriesMissingImages failed: %v", err)
+	}
+	if len(missing) != 2 {
+		t.Fatalf("expected 2 missing, got %d", len(missing))
+	}
+	ids := make(map[string]bool)
+	for _, e := range missing {
+		ids[e.ID] = true
+	}
+	if !ids["a"] || !ids["c"] {
+		t.Errorf("expected a and c, got %+v", ids)
+	}
+
+	// Test limit.
+	limited, err := store.EntriesMissingImages(ctx, 1)
+	if err != nil {
+		t.Fatalf("EntriesMissingImages limit failed: %v", err)
+	}
+	if len(limited) != 1 {
+		t.Errorf("expected 1 with limit, got %d", len(limited))
+	}
+}
+
+func TestStore_UpdateEntryImage(t *testing.T) {
+	dir := t.TempDir()
+	store, err := Open(filepath.Join(dir, "catalog.db"))
+	if err != nil {
+		t.Fatalf("Open failed: %v", err)
+	}
+	defer store.Close()
+
+	ctx := context.Background()
+	e := Entry{
+		ID: "a", Source: "test", SourceID: "1", Kind: EntryKindGame,
+		Title: "Alpha", NormalizedTitle: NormalizeTitle("Alpha"),
+		ImageURL: "", ImageKind: "", UpdatedAt: time.Now(),
+	}
+	if err := store.UpsertEntry(ctx, e, nil); err != nil {
+		t.Fatalf("UpsertEntry failed: %v", err)
+	}
+
+	if err := store.UpdateEntryImage(ctx, "a", "https://cdn.example.com/img.png", "steamgriddb"); err != nil {
+		t.Fatalf("UpdateEntryImage failed: %v", err)
+	}
+
+	got, err := store.GetEntry(ctx, "a")
+	if err != nil {
+		t.Fatalf("GetEntry failed: %v", err)
+	}
+	if got.ImageURL != "https://cdn.example.com/img.png" {
+		t.Errorf("image_url = %q", got.ImageURL)
+	}
+	if got.ImageKind != "steamgriddb" {
+		t.Errorf("image_kind = %q", got.ImageKind)
+	}
+}
+
 func TestStore_UpsertReplacesAliases(t *testing.T) {
 	dir := t.TempDir()
 	store, err := Open(filepath.Join(dir, "catalog.db"))

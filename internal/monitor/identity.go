@@ -46,7 +46,102 @@ func isNoisyProcess(name string) bool {
 			return true
 		}
 	}
-	if strings.HasPrefix(lower, "pressure-vessel-") {
+	return strings.HasPrefix(lower, "pressure-vessel-")
+}
+
+// isExcludedApp returns true for common desktop apps that should never be
+// tracked as Rich Presence: browsers, Discord, file managers, etc.
+func isExcludedApp(name string) bool {
+	lower := strings.ToLower(name)
+
+	// Exact process-name matches.
+	exactExcludes := []string{
+		// Discord
+		"discord", "discordcanary", "discordptb", "discorddevelopment",
+		// Firefox variants
+		"firefox", "firefox-bin", "firefox-esr", "firefox-esr-bin",
+		"firefox-developer-edition", "firefox-devedition",
+		"firefox-nightly", "firefox-nightly-bin",
+		"firefox-beta", "firefox-beta-bin",
+		"librewolf", "waterfox", "floorp", "palemoon", "basilisk",
+		"icecat", "iceape", "seamonkey",
+		// Chromium / Chrome / Edge / Brave / Opera / Vivaldi
+		"chrome", "chromium", "chromium-browser",
+		"brave", "brave-browser",
+		"opera", "opera-beta", "opera-developer",
+		"microsoft-edge", "microsoft-edge-beta", "microsoft-edge-dev",
+		"vivaldi", "vivaldi-stable",
+		"thorium", "thorium-browser",
+		"iridium", "iridium-browser",
+		"ungoogled-chromium",
+		"epiphany", "falkon", "midori", "qutebrowser",
+		"konqueror", "rekonq", "otter-browser",
+		"luakit", "surf", "nyxt", "lagrange", "badwolf",
+		"netsurf", "netsurf-gtk3", "dooble",
+		"tor-browser", "torbrowser",
+		"zen", "zen-browser",
+		// File managers
+		"dolphin", "nautilus", "thunar", "nemo", "pcmanfm",
+		"caja", "spacefm", "krusader", "doublecmd",
+		// Common desktop noise
+		"xfdesktop", "plasmashell", "gnome-shell", "cinnamon",
+		"pamac", "pamac-tray", "octopi",
+		"nm-applet", "blueman-applet", "pasystray",
+		// Launchers (never show as the active game)
+		"steam", "steamlinux", "steam-runtime", "steamwebhelper",
+		"epicgameslauncher", "heroic", "lutris", "gog-galaxy",
+		"itch", "bottles", "playnite",
+		// Terminal emulators (never track as active game)
+		"kitty", "alacritty", "wezterm", "foot", "gnome-terminal",
+		"konsole", "xfce4-terminal", "lxterminal", "terminator",
+		"tilix", "guake", "yakuake", "tilda", "qterminal",
+		"st", "xterm", "urxvt", "rxvt", "eterm",
+		"hyper", "tabby", "warp", "rio",
+		// Shells (when detected as standalone processes)
+		"bash", "zsh", "fish", "sh", "dash", "csh", "tcsh",
+	}
+	for _, e := range exactExcludes {
+		if lower == e {
+			return true
+		}
+	}
+
+	// Flatpak / snap style IDs often contain dots.
+	if strings.Contains(lower, ".") {
+		flatpakBrowserIDs := []string{
+			"org.mozilla.firefox",
+			"org.mozilla.firefox_beta",
+			"org.mozilla.firefox_nightly",
+			"org.mozilla.firefoxdevedition",
+			"io.gitlab.librewolf",
+			"io.github.zen_browser.zen",
+			"com.google.Chrome",
+			"com.google.Chrome.beta",
+			"com.google.Chrome.dev",
+			"com.google.Chrome.canary",
+			"org.chromium.Chromium",
+			"com.brave.Browser",
+			"com.microsoft.Edge",
+			"com.microsoft.Edge.dev",
+			"com.microsoft.Edge.beta",
+			"com.opera.Opera",
+			"com.vivaldi.Vivaldi",
+			"com.github.Eloston.UngoogledChromium",
+			"org.gnome.Epiphany",
+			"io.gitlab.pale_moon",
+		}
+		for _, f := range flatpakBrowserIDs {
+			if lower == strings.ToLower(f) {
+				return true
+			}
+		}
+	}
+
+	// Match helpers with known suffixes
+	if strings.HasPrefix(lower, "xdg-") {
+		return true
+	}
+	if strings.HasSuffix(lower, "-settings") || strings.HasSuffix(lower, "-config") {
 		return true
 	}
 	return false
@@ -137,8 +232,7 @@ func ResolveProcessIdentities() []profile.DetectedProcess {
 func ResolveProcessIdentitiesLite(candidatePIDs []int) []profile.DetectedProcess {
 	pt := BuildProcessTableLite()
 
-	// Determine which PIDs need expensive enrichment:
-	// candidates + their descendants + their ancestors.
+	// Phase 1: enrich candidates + descendants + ancestors.
 	enrichSet := make(map[int]bool)
 	for _, pid := range candidatePIDs {
 		enrichSet[pid] = true
@@ -149,12 +243,57 @@ func ResolveProcessIdentitiesLite(candidatePIDs []int) []profile.DetectedProcess
 			enrichSet[a] = true
 		}
 	}
-
 	var enrichList []int
 	for pid := range enrichSet {
 		enrichList = append(enrichList, pid)
 	}
 	EnrichProcessTable(pt, enrichList)
+
+	// Phase 2: for carrier candidates with Wine/Proton clues, lightweight-read
+	// same-PGID peers' env. If they share a clue, fully enrich them so the
+	// carrier can inherit aliases/SteamAppID.
+	var peerEnrich []int
+	for _, pid := range candidatePIDs {
+		info := pt.ByPID[pid]
+		if info == nil || !isCarrierProcess(info.Name) {
+			continue
+		}
+		// Only probe peers if the candidate itself has a gaming clue.
+		if info.SteamAppID == "" && info.EnvHints["WINEPREFIX"] == "" &&
+			info.EnvHints["STEAM_COMPAT_DATA_PATH"] == "" && info.EnvHints["PROTON_COMPAT_DATA_PATH"] == "" {
+			continue
+		}
+		for _, peer := range pt.PgidPeers(pid) {
+			if enrichSet[peer] {
+				continue // already enriched
+			}
+			peerEnrich = append(peerEnrich, peer)
+		}
+	}
+	if len(peerEnrich) > 0 {
+		EnrichProcessEnvOnly(pt, peerEnrich)
+		var fullEnrich []int
+		for _, pid := range candidatePIDs {
+			info := pt.ByPID[pid]
+			if info == nil || !isCarrierProcess(info.Name) {
+				continue
+			}
+			for _, peer := range pt.PgidPeers(pid) {
+				if enrichSet[peer] {
+					continue
+				}
+				if peerInfo := pt.ByPID[peer]; peerInfo != nil {
+					if gate := determineSharedGate(info, peerInfo); gate != "" {
+						fullEnrich = append(fullEnrich, peer)
+						enrichSet[peer] = true
+					}
+				}
+			}
+		}
+		if len(fullEnrich) > 0 {
+			EnrichProcessTable(pt, fullEnrich)
+		}
+	}
 
 	return resolveIdentitiesFromTable(pt)
 }
@@ -171,26 +310,86 @@ func resolveIdentitiesFromTable(pt *ProcessTable) []profile.DetectedProcess {
 	}
 
 	// Second pass: for carrier processes, enrich with aliases and SteamAppID
-	// from related processes.
+	// from related processes, tracking the relation source for observability.
+	var identitySources = make(map[int][]monitorIdentitySource)
 	for _, info := range pt.Procs {
 		if !isCarrierProcess(info.Name) {
 			continue
 		}
 
-		related := collectRelatedPIDs(pt, info.PID)
-		for _, relPID := range related {
-			// Propagate aliases
-			if relAliases, ok := pidAliases[relPID]; ok {
+		for _, rec := range collectRelatedRecords(pt, info.PID) {
+			relInfo := pt.ByPID[rec.PID]
+			if relInfo == nil {
+				continue
+			}
+
+			// --- Alias propagation ---
+			if relAliases, ok := pidAliases[rec.PID]; ok {
 				for _, a := range relAliases {
-					// Only add non-noisy aliases not already present
-					if !isNoisyProcess(a) && !containsAlias(pidAliases[info.PID], a) {
+					if isNoisyProcess(a) || containsAlias(pidAliases[info.PID], a) {
+						continue
+					}
+
+					// Gate alias propagation by relation type.
+					propagate := false
+					switch rec.Type {
+					case relDescendant:
+						// Descendants are almost always the actual game.
+						propagate = true
+					case relAncestor:
+						// Only propagate from gaming ancestors (Steam/Proton/Wine
+						// launchers), never from common shells unless there is a
+						// strong shared clue.
+						if isGamingAncestor(relInfo) {
+							propagate = true
+						} else if isCommonShell(relInfo.Name) {
+							// Shells only contribute if a very strong clue is shared.
+							if rec.Gate == gateSharedSteamID || rec.Gate == gateSharedWinePref || rec.Gate == gateSharedCompat {
+								propagate = true
+							}
+						}
+					case relPgidPeer:
+						// Already gated by determineSharedGate in collectRelatedRecords.
+						propagate = true
+					}
+
+					if propagate {
 						pidAliases[info.PID] = append(pidAliases[info.PID], a)
+						identitySources[info.PID] = append(identitySources[info.PID], monitorIdentitySource{
+							Alias:   a,
+							FromPID: rec.PID,
+							Type:    rec.Type,
+							Gate:    rec.Gate,
+						})
 					}
 				}
 			}
-			// Propagate SteamAppID if carrier doesn't have one
-			if pidSteamAppID[info.PID] == "" && pidSteamAppID[relPID] != "" {
-				pidSteamAppID[info.PID] = pidSteamAppID[relPID]
+
+			// --- SteamAppID propagation ---
+			if pidSteamAppID[info.PID] == "" && pidSteamAppID[rec.PID] != "" {
+				// Propagate SteamAppID from descendants or strong ancestors.
+				propagateID := false
+				switch rec.Type {
+				case relDescendant:
+					propagateID = true
+				case relAncestor:
+					if isGamingAncestor(relInfo) {
+						propagateID = true
+					}
+				case relPgidPeer:
+					if rec.Gate != gateDirect {
+						propagateID = true
+					}
+				}
+				if propagateID {
+					pidSteamAppID[info.PID] = pidSteamAppID[rec.PID]
+					identitySources[info.PID] = append(identitySources[info.PID], monitorIdentitySource{
+						SteamAppID: pidSteamAppID[rec.PID],
+						FromPID:    rec.PID,
+						Type:       rec.Type,
+						Gate:       rec.Gate,
+					})
+				}
 			}
 		}
 	}
@@ -203,6 +402,12 @@ func resolveIdentitiesFromTable(pt *ProcessTable) []profile.DetectedProcess {
 			continue
 		}
 
+		// Skip common desktop apps (browsers, Discord, file managers) that
+		// should never be tracked as Rich Presence.
+		if isExcludedApp(info.Name) {
+			continue
+		}
+
 		// Extract DesktopID from env
 		desktopID := ""
 		if v := info.EnvHints["GIO_LAUNCHED_DESKTOP_FILE"]; v != "" {
@@ -210,27 +415,33 @@ func resolveIdentitiesFromTable(pt *ProcessTable) []profile.DetectedProcess {
 			desktopID = strings.TrimSuffix(desktopID, ".desktop")
 		}
 
+		aliases := pidAliases[info.PID]
+		// If this is a known emulator, try to extract the actual game title from
+		// the window title and add it as an alias so the catalog can match it.
+		if emuTitle := ExtractEmulatorGameTitle(info.Name, windowTitles[info.PID]); emuTitle != "" {
+			aliases = append(aliases, emuTitle)
+		}
+
 		processes = append(processes, profile.DetectedProcess{
-			PID:         info.PID,
-			Name:        info.Name,
-			WindowTitle: windowTitles[info.PID],
-			ExePath:     info.ExePath,
-			Cwd:         info.Cwd,
-			Args:        info.Args,
-			SteamAppID:  pidSteamAppID[info.PID],
-			DesktopID:   desktopID,
-			Aliases:     pidAliases[info.PID],
+			PID:             info.PID,
+			Name:            info.Name,
+			WindowTitle:     windowTitles[info.PID],
+			ExePath:         info.ExePath,
+			Cwd:             info.Cwd,
+			Args:            info.Args,
+			SteamAppID:      pidSteamAppID[info.PID],
+			DesktopID:       desktopID,
+			Aliases:         aliases,
+			IdentitySources: convertIdentitySources(identitySources[info.PID]),
 		})
 	}
 
 	return processes
 }
 
-// collectRelatedPIDs returns PIDs of processes related to the given PID.
-// It always includes descendants and ancestors (strong tree relations).
-// It only includes pgid/sid peers when they share a Wine/Proton/Steam clue
-// with the target process, to avoid false positives from unrelated desktop apps.
-func collectRelatedPIDs(pt *ProcessTable, pid int) []int {
+// collectRelatedRecords returns structured relation records for processes
+// related to the given PID, including relation type and gate strength.
+func collectRelatedRecords(pt *ProcessTable, pid int) []relationRecord {
 	info := pt.ByPID[pid]
 	if info == nil {
 		return nil
@@ -238,62 +449,56 @@ func collectRelatedPIDs(pt *ProcessTable, pid int) []int {
 
 	seen := make(map[int]bool)
 	seen[pid] = true // exclude self
-	var result []int
+	var result []relationRecord
 
-	add := func(pids []int) {
-		for _, p := range pids {
-			if !seen[p] {
-				seen[p] = true
-				result = append(result, p)
-			}
+	add := func(rec relationRecord) {
+		if !seen[rec.PID] {
+			seen[rec.PID] = true
+			result = append(result, rec)
 		}
 	}
 
-	// Strong relations: descendants and ancestors are always included.
-	add(pt.Descendants(pid))
-	add(pt.Ancestors(pid))
+	// Descendants: always strong.
+	for _, d := range pt.Descendants(pid) {
+		add(relationRecord{PID: d, Type: relDescendant, Gate: gateDirect})
+	}
+
+	// Ancestors: mark as direct; alias propagation is gated later by
+	// isGamingAncestor / isCommonShell.
+	for _, a := range pt.Ancestors(pid) {
+		add(relationRecord{PID: a, Type: relAncestor, Gate: gateDirect})
+	}
 
 	// PGID peers: only when they share a Wine/Proton/Steam clue.
 	for _, peer := range pt.PgidPeers(pid) {
 		if peerInfo := pt.ByPID[peer]; peerInfo != nil {
-			if sharesWineProtonClue(info, peerInfo) {
-				add([]int{peer})
+			if gate := determineSharedGate(info, peerInfo); gate != "" {
+				add(relationRecord{PID: peer, Type: relPgidPeer, Gate: gate})
 			}
 		}
 	}
 
-	// SID peers: disabled by default to avoid broad false positives.
-	// (If needed later, gate them the same way as PGID peers.)
-
 	return result
 }
 
-// sharesWineProtonClue returns true if two processes share a gaming-platform
-// hint that makes them likely part of the same Wine/Proton/Steam launch.
-func sharesWineProtonClue(a, b *ProcessInfo) bool {
+// determineSharedGate returns the strongest shared Wine/Proton clue between
+// two processes, or empty string if none.
+func determineSharedGate(a, b *ProcessInfo) relationGate {
 	if a == nil || b == nil {
-		return false
+		return ""
 	}
-
-	// Same Steam app ID
 	if a.SteamAppID != "" && a.SteamAppID == b.SteamAppID {
-		return true
+		return gateSharedSteamID
 	}
-
-	// Same WINEPREFIX
 	if a.EnvHints["WINEPREFIX"] != "" && a.EnvHints["WINEPREFIX"] == b.EnvHints["WINEPREFIX"] {
-		return true
+		return gateSharedWinePref
 	}
-
-	// Same Steam compatibility data path
 	compatKeys := []string{"STEAM_COMPAT_DATA_PATH", "PROTON_COMPAT_DATA_PATH"}
 	for _, key := range compatKeys {
 		if a.EnvHints[key] != "" && a.EnvHints[key] == b.EnvHints[key] {
-			return true
+			return gateSharedCompat
 		}
 	}
-
-	// Same executable/cwd subtree under a Steam compatibility prefix
 	for _, key := range compatKeys {
 		prefix := a.EnvHints[key]
 		if prefix == "" {
@@ -303,14 +508,13 @@ func sharesWineProtonClue(a, b *ProcessInfo) bool {
 			continue
 		}
 		if isUnderPrefix(a.Cwd, prefix) && isUnderPrefix(b.Cwd, prefix) {
-			return true
+			return gateCompatSubtree
 		}
 		if isUnderPrefix(a.ExePath, prefix) && isUnderPrefix(b.ExePath, prefix) {
-			return true
+			return gateCompatSubtree
 		}
 	}
-
-	return false
+	return ""
 }
 
 // isUnderPrefix reports whether path is a descendant of prefix.
@@ -336,20 +540,108 @@ func containsAlias(aliases []string, target string) bool {
 	return false
 }
 
+// isCommonShell returns true for terminal/shell processes that should not
+// contribute aliases to carriers unless a strong shared clue is present.
+func isCommonShell(name string) bool {
+	lower := strings.ToLower(name)
+	shells := []string{
+		"bash", "zsh", "fish", "sh", "dash", "csh", "tcsh",
+		"gnome-terminal-", "gnome-terminal-server",
+		"konsole", "kitty", "alacritty", "terminator", "xfce4-terminal",
+		"xterm", "urxvt", "rxvt",
+	}
+	for _, s := range shells {
+		if lower == s || strings.HasPrefix(lower, s) {
+			return true
+		}
+	}
+	return false
+}
+
+// isGamingAncestor returns true if an ancestor process is likely part of the
+// game launch chain (Steam, Proton, Wine launcher) rather than a generic shell.
+func isGamingAncestor(info *ProcessInfo) bool {
+	if info == nil {
+		return false
+	}
+	if isCarrierProcess(info.Name) {
+		return true
+	}
+	if isCommonShell(info.Name) {
+		return false
+	}
+	// If the ancestor has Steam/Wine/Proton env hints, it's likely a launcher.
+	for _, key := range []string{"SteamAppId", "SteamGameId", "SteamAppID", "SteamCompatAppId", "WINEPREFIX"} {
+		if info.EnvHints[key] != "" {
+			return true
+		}
+	}
+	return false
+}
+
+// relationType describes how a related process is connected to the carrier.
+type relationType string
+
+const (
+	relDescendant relationType = "descendant"
+	relAncestor   relationType = "ancestor"
+	relPgidPeer   relationType = "pgid_peer"
+)
+
+// relationGate describes the strength of the relationship clue.
+type relationGate string
+
+const (
+	gateDirect         relationGate = "direct"
+	gateSharedSteamID  relationGate = "shared_steam_app_id"
+	gateSharedWinePref relationGate = "shared_wineprefix"
+	gateSharedCompat   relationGate = "shared_compat_path"
+	gateCompatSubtree  relationGate = "compat_subtree"
+)
+
+// relationRecord ties a related PID to its connection type and gate.
+type relationRecord struct {
+	PID  int
+	Type relationType
+	Gate relationGate
+}
+
+// monitorIdentitySource is the internal shape used during enrichment.
+// It is converted to profile.IdentitySource at the boundary.
+type monitorIdentitySource struct {
+	Alias      string
+	SteamAppID string
+	FromPID    int
+	Type       relationType
+	Gate       relationGate
+}
+
+func convertIdentitySources(src []monitorIdentitySource) []profile.IdentitySource {
+	out := make([]profile.IdentitySource, len(src))
+	for i, s := range src {
+		out[i] = profile.IdentitySource{
+			Alias:      s.Alias,
+			SteamAppID: s.SteamAppID,
+			FromPID:    s.FromPID,
+			Type:       string(s.Type),
+			Gate:       string(s.Gate),
+		}
+	}
+	return out
+}
+
 // isInternalHelper returns true for processes that are almost never the game itself.
 func isInternalHelper(name string) bool {
 	lower := strings.ToLower(name)
 	helpers := []string{
 		"wineserver", "wine-preloader", "wine64-preloader",
 		"pressure-vessel-adverb", "pressure-vessel-wrap",
+		"reaper", // Steam's process reaper
 	}
 	for _, h := range helpers {
 		if lower == h {
 			return true
 		}
 	}
-	if strings.HasPrefix(lower, "pressure-vessel-") {
-		return true
-	}
-	return false
+	return strings.HasPrefix(lower, "pressure-vessel-")
 }

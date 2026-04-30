@@ -11,6 +11,7 @@ import (
 )
 
 // SteamLocalPaths returns candidate steamapps directories.
+// It also parses libraryfolders.vdf to discover additional Steam library folders.
 func SteamLocalPaths() []string {
 	var paths []string
 	home, _ := os.UserHomeDir()
@@ -23,6 +24,72 @@ func SteamLocalPaths() []string {
 	}
 	if p := os.Getenv("STEAM_COMPAT_CLIENT_INSTALL_PATH"); p != "" {
 		paths = append(paths, filepath.Join(p, "steamapps"))
+	}
+
+	// Discover additional libraries from libraryfolders.vdf
+	for _, libPath := range discoverSteamLibraries() {
+		paths = append(paths, filepath.Join(libPath, "steamapps"))
+	}
+
+	return paths
+}
+
+// discoverSteamLibraries parses libraryfolders.vdf to find additional Steam
+// library folders. It searches in common Steam config locations.
+func discoverSteamLibraries() []string {
+	home, _ := os.UserHomeDir()
+	if home == "" {
+		return nil
+	}
+
+	var vdfPaths []string
+	vdfPaths = append(vdfPaths, filepath.Join(home, ".local", "share", "Steam", "steamapps", "libraryfolders.vdf"))
+	vdfPaths = append(vdfPaths, filepath.Join(home, ".steam", "steam", "steamapps", "libraryfolders.vdf"))
+	vdfPaths = append(vdfPaths, filepath.Join(home, ".steam", "root", "steamapps", "libraryfolders.vdf"))
+
+	for _, vdfPath := range vdfPaths {
+		data, err := os.ReadFile(vdfPath)
+		if err != nil {
+			continue
+		}
+		libs := parseLibraryFoldersVDF(data)
+		if len(libs) > 0 {
+			return libs
+		}
+	}
+	return nil
+}
+
+// parseLibraryFoldersVDF extracts "path" values from a libraryfolders.vdf file.
+// This is a best-effort text parser that looks for quoted "path" keys.
+func parseLibraryFoldersVDF(data []byte) []string {
+	var paths []string
+	s := string(data)
+	// Look for "path" followed by a quoted value.
+	for i := 0; i < len(s); {
+		idx := strings.Index(s[i:], `"path"`)
+		if idx < 0 {
+			break
+		}
+		pos := i + idx + len(`"path"`)
+		// Skip whitespace and tabs
+		for pos < len(s) && (s[pos] == ' ' || s[pos] == '\t' || s[pos] == '\n' || s[pos] == '\r') {
+			pos++
+		}
+		if pos >= len(s) || s[pos] != '"' {
+			i = pos
+			continue
+		}
+		pos++ // skip opening quote
+		end := strings.IndexByte(s[pos:], '"')
+		if end < 0 {
+			break
+		}
+		path := s[pos : pos+end]
+		if path != "" {
+			paths = append(paths, path)
+		}
+		i = pos + end + 1
 	}
 	return paths
 }

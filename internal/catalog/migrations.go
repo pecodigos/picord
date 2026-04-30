@@ -1,7 +1,5 @@
 package catalog
 
-const schemaVersion = 1
-
 var migrations = []string{
 	`CREATE TABLE IF NOT EXISTS schema_version (
 		version INTEGER PRIMARY KEY

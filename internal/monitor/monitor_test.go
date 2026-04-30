@@ -42,10 +42,10 @@ func createMockProcess(t *testing.T, root string, pid int, name string, hasDisco
 
 func TestScan_NoDiscordProcesses(t *testing.T) {
 	root := setupMockProc(t)
-	createMockProcess(t, root, 1000, "firefox", false)
-	createMockProcess(t, root, 1001, "chrome", false)
+	createMockProcess(t, root, 1000, "blender", false)
+	createMockProcess(t, root, 1001, "factorio", false)
 
-	procs := scan()
+	procs := scanProcesses(false)
 	if len(procs) != 0 {
 		t.Errorf("expected 0 discord processes, got %d", len(procs))
 	}
@@ -53,8 +53,8 @@ func TestScan_NoDiscordProcesses(t *testing.T) {
 
 func TestScan_AllProcessesIncludesNonDiscordProcesses(t *testing.T) {
 	root := setupMockProc(t)
-	createMockProcess(t, root, 1000, "firefox", false)
-	createMockProcess(t, root, 2000, "steam", true)
+	createMockProcess(t, root, 1000, "blender", false)
+	createMockProcess(t, root, 2000, "obs", true)
 
 	procs := scanProcesses(true)
 	if len(procs) != 2 {
@@ -65,15 +65,15 @@ func TestScan_AllProcessesIncludesNonDiscordProcesses(t *testing.T) {
 	for _, p := range procs {
 		names[p.Name] = true
 	}
-	if !names["firefox"] || !names["steam"] {
-		t.Errorf("expected firefox and steam, got %+v", procs)
+	if !names["blender"] || !names["obs"] {
+		t.Errorf("expected blender and obs, got %+v", procs)
 	}
 }
 
 func TestMonitor_ScanNowHonorsScanAllOption(t *testing.T) {
 	root := setupMockProc(t)
-	createMockProcess(t, root, 1000, "firefox", false)
-	createMockProcess(t, root, 2000, "steam", true)
+	createMockProcess(t, root, 1000, "blender", false)
+	createMockProcess(t, root, 2000, "obs", true)
 
 	m := NewWithOptions(1, true, nil)
 	procs := m.ScanNow()
@@ -84,28 +84,28 @@ func TestMonitor_ScanNowHonorsScanAllOption(t *testing.T) {
 
 func TestScan_OneDiscordProcess(t *testing.T) {
 	root := setupMockProc(t)
-	createMockProcess(t, root, 1000, "firefox", false)
-	createMockProcess(t, root, 2000, "steam", true)
+	createMockProcess(t, root, 1000, "blender", false)
+	createMockProcess(t, root, 2000, "obs", true)
 
-	procs := scan()
+	procs := scanProcesses(false)
 	if len(procs) != 1 {
 		t.Fatalf("expected 1 discord process, got %d", len(procs))
 	}
 	if procs[0].PID != 2000 {
 		t.Errorf("expected PID 2000, got %d", procs[0].PID)
 	}
-	if procs[0].Name != "steam" {
-		t.Errorf("expected name steam, got %q", procs[0].Name)
+	if procs[0].Name != "obs" {
+		t.Errorf("expected name obs, got %q", procs[0].Name)
 	}
 }
 
 func TestScan_MultipleDiscordProcesses(t *testing.T) {
 	root := setupMockProc(t)
-	createMockProcess(t, root, 2000, "steam", true)
-	createMockProcess(t, root, 3000, "discord", true)
-	createMockProcess(t, root, 4000, "firefox", false)
+	createMockProcess(t, root, 2000, "obs", true)
+	createMockProcess(t, root, 3000, "factorio", true)
+	createMockProcess(t, root, 4000, "blender", false)
 
-	procs := scan()
+	procs := scanProcesses(false)
 	if len(procs) != 2 {
 		t.Fatalf("expected 2 discord processes, got %d", len(procs))
 	}
@@ -114,16 +114,16 @@ func TestScan_MultipleDiscordProcesses(t *testing.T) {
 	for _, p := range procs {
 		names[p.Name] = true
 	}
-	if !names["steam"] || !names["discord"] {
-		t.Errorf("expected steam and discord, got %+v", procs)
+	if !names["obs"] || !names["factorio"] {
+		t.Errorf("expected obs and factorio, got %+v", procs)
 	}
 }
 
 func TestScan_Deduplication(t *testing.T) {
 	root := setupMockProc(t)
-	createMockProcess(t, root, 2000, "steam", true)
+	createMockProcess(t, root, 2000, "obs", true)
 	// Same PID shouldn't appear twice since we only create one dir per PID
-	procs := scan()
+	procs := scanProcesses(false)
 	if len(procs) != 1 {
 		t.Errorf("expected 1 process, got %d", len(procs))
 	}
@@ -131,10 +131,10 @@ func TestScan_Deduplication(t *testing.T) {
 
 func TestMonitor_StartStop(t *testing.T) {
 	root := setupMockProc(t)
-	createMockProcess(t, root, 2000, "steam", true)
+	createMockProcess(t, root, 2000, "obs", true)
 
 	var detected []profile.DetectedProcess
-	m := New(1, func(procs []profile.DetectedProcess) {
+	m := NewWithOptions(1, false, func(procs []profile.DetectedProcess) {
 		detected = procs
 	})
 	m.Start()
@@ -151,7 +151,7 @@ func TestMonitor_StartStop(t *testing.T) {
 	// we at least verify the monitor can start and stop without panic.
 }
 
-func TestReadProcHints_DesktopID(t *testing.T) {
+func TestReadProcessInfo_DesktopID(t *testing.T) {
 	root := setupMockProc(t)
 	pid := 5000
 	procDir := filepath.Join(root, fmt.Sprintf("%d", pid))
@@ -169,11 +169,16 @@ func TestReadProcHints_DesktopID(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	_, _, _, steamAppID, desktopID := readProcHints(pid, "firefox")
-	if desktopID != "firefox" {
-		t.Errorf("expected desktopID=firefox, got %q", desktopID)
+	info := readProcessInfo(pid)
+	if info == nil {
+		t.Fatal("expected readProcessInfo to succeed")
 	}
-	if steamAppID != "" {
-		t.Errorf("expected empty steamAppID, got %q", steamAppID)
+	if info.SteamAppID != "" {
+		t.Errorf("expected empty steamAppID, got %q", info.SteamAppID)
+	}
+	// DesktopID extraction happens in resolveIdentitiesFromTable, not readProcessInfo.
+	// Verify the env hint is present.
+	if info.EnvHints["GIO_LAUNCHED_DESKTOP_FILE"] != "/usr/share/applications/firefox.desktop" {
+		t.Errorf("expected desktop env hint, got %v", info.EnvHints)
 	}
 }
