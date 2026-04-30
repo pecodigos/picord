@@ -1,13 +1,27 @@
 package settings
 
 import (
-	"os/exec"
+	"os"
+	"path/filepath"
 	"strconv"
 
 	"github.com/gotk3/gotk3/gtk"
 
 	"github.com/pecodigos/picord/internal/config"
 )
+
+const desktopEntryContent = `[Desktop Entry]
+Name=Picord
+Comment=Universal Discord Rich Presence Manager
+Exec=picord run
+Icon=picord
+Type=Application
+Categories=Utility;
+Terminal=false
+StartupNotify=false
+X-GNOME-Autostart-enabled=true
+X-GNOME-Autostart-Delay=5
+`
 
 type Dialog struct {
 	cfg    config.AppConfig
@@ -86,13 +100,13 @@ func (d *Dialog) buildGeneralTab() *gtk.Box {
 	frameBox.SetBorderWidth(8)
 	frame.Add(frameBox)
 
-	loginCheck, _ := gtk.CheckButtonNewWithLabel("Launch on login (systemd service)")
-	loginCheck.SetActive(serviceEnabled())
+	loginCheck, _ := gtk.CheckButtonNewWithLabel("Launch on login (desktop autostart)")
+	loginCheck.SetActive(loginAutostartEnabled())
 	loginCheck.Connect("toggled", func() {
 		if loginCheck.GetActive() {
-			enableService()
+			enableLoginAutostart()
 		} else {
-			disableService()
+			disableLoginAutostart()
 		}
 	})
 	frameBox.PackStart(loginCheck, false, false, 0)
@@ -220,17 +234,30 @@ func label(text string) *gtk.Label {
 	return l
 }
 
-func serviceEnabled() bool {
-	out, err := exec.Command("systemctl", "--user", "is-enabled", "picord.service").Output()
-	return err == nil && string(out) == "enabled\n"
+func autostartPath() string {
+	configHome := os.Getenv("XDG_CONFIG_HOME")
+	if configHome == "" {
+		home, err := os.UserHomeDir()
+		if err == nil {
+			configHome = filepath.Join(home, ".config")
+		}
+	}
+	return filepath.Join(configHome, "autostart", "picord.desktop")
 }
 
-func enableService() {
-	exec.Command("systemctl", "--user", "enable", "picord.service").Run()
+func loginAutostartEnabled() bool {
+	_, err := os.Stat(autostartPath())
+	return err == nil
 }
 
-func disableService() {
-	exec.Command("systemctl", "--user", "disable", "picord.service").Run()
+func enableLoginAutostart() {
+	path := autostartPath()
+	os.MkdirAll(filepath.Dir(path), 0755)
+	os.WriteFile(path, []byte(desktopEntryContent), 0644)
+}
+
+func disableLoginAutostart() {
+	os.Remove(autostartPath())
 }
 
 

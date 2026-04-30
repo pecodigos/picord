@@ -5,11 +5,9 @@ PartOf=graphical-session.target
 
 [Service]
 Type=simple
-ExecStart=%h/.local/bin/picord
+ExecStart=%h/.local/bin/picord run --tray
 Restart=on-failure
 RestartSec=5
-Environment=DISPLAY=:0
-Environment=WAYLAND_DISPLAY=wayland-0
 
 [Install]
 WantedBy=default.target
