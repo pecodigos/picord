@@ -16,6 +16,7 @@ type DetectedProcess struct {
 	SteamAppID  string   `json:"steam_app_id,omitempty"`
 	LutrisSlug  string   `json:"lutris_slug,omitempty"`
 	DesktopID   string   `json:"desktop_id,omitempty"`
+	Aliases     []string `json:"aliases,omitempty"`
 }
 
 func (p Profile) Matches(proc DetectedProcess) int {
@@ -30,6 +31,12 @@ func (p Profile) Matches(proc DetectedProcess) int {
 	case MatchProcessName:
 		if procName == matchVal {
 			return p.Priority
+		}
+		// Also check aliases for Wine/Proton carrier processes.
+		for _, alias := range proc.Aliases {
+			if strings.ToLower(alias) == matchVal {
+				return p.Priority
+			}
 		}
 		return -1
 
@@ -46,6 +53,12 @@ func (p Profile) Matches(proc DetectedProcess) int {
 		}
 		if re.MatchString(proc.Name) {
 			return p.Priority
+		}
+		// Also check aliases.
+		for _, alias := range proc.Aliases {
+			if re.MatchString(alias) {
+				return p.Priority
+			}
 		}
 		return -1
 

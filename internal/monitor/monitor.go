@@ -82,50 +82,19 @@ func scan() []profile.DetectedProcess {
 }
 
 func scanProcesses(scanAll bool) []profile.DetectedProcess {
-	seen := make(map[int]bool)
-	var processes []profile.DetectedProcess
+	// Use the new identity resolver which builds a full /proc table,
+	// enriches Wine/Proton carriers with aliases, and returns DetectedProcesses.
+	processes := ResolveProcessIdentities()
 
-	windowTitles, _ := GetWindowTitles()
-
-	procDir, err := os.Open(procRoot)
-	if err != nil {
-		return processes
-	}
-	defer procDir.Close()
-
-	entries, err := procDir.Readdirnames(-1)
-	if err != nil {
-		return processes
-	}
-
-	for _, entry := range entries {
-		pid := 0
-		if _, err := fmt.Sscanf(entry, "%d", &pid); err != nil {
-			continue
+	if !scanAll {
+		// Legacy mode: only include processes with Discord IPC connections
+		var filtered []profile.DetectedProcess
+		for _, p := range processes {
+			if processHasDiscordIPC(fmt.Sprintf("%d", p.PID)) {
+				filtered = append(filtered, p)
+			}
 		}
-
-		connected := scanAll || processHasDiscordIPC(entry)
-		if !connected {
-			continue
-		}
-
-		if seen[pid] {
-			continue
-		}
-		seen[pid] = true
-
-		name := readProcName(pid)
-		exePath, cwd, args, steamAppID, desktopID := readProcHints(pid, name)
-		processes = append(processes, profile.DetectedProcess{
-			PID:         pid,
-			Name:        name,
-			WindowTitle: windowTitles[pid],
-			ExePath:     exePath,
-			Cwd:         cwd,
-			Args:        args,
-			SteamAppID:  steamAppID,
-			DesktopID:   desktopID,
-		})
+		return filtered
 	}
 
 	return processes

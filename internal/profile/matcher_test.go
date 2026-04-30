@@ -129,3 +129,47 @@ func TestFindBestMatch_PrioritySort(t *testing.T) {
 		t.Errorf("expected 'long' profile due to longer match value, got %v", match)
 	}
 }
+
+func TestMatches_ProcessName_Alias(t *testing.T) {
+	p := Profile{
+		Name:     "lethal",
+		Enabled:  true,
+		Priority: 10,
+		Match:    MatchRule{Type: MatchProcessName, Value: "lethal company.exe"},
+	}
+
+	// Wine carrier process enriched with alias
+	proc := DetectedProcess{
+		Name:    "wine",
+		Aliases: []string{"Lethal Company.exe", "Lethal Company"},
+	}
+	if p.Matches(proc) < 0 {
+		t.Error("expected alias match for wine process with game alias")
+	}
+
+	// Also test case-insensitive
+	proc2 := DetectedProcess{
+		Name:    "wine64",
+		Aliases: []string{"LETHAL COMPANY.EXE"},
+	}
+	if p.Matches(proc2) < 0 {
+		t.Error("expected case-insensitive alias match")
+	}
+}
+
+func TestMatches_Regex_Alias(t *testing.T) {
+	p := Profile{
+		Name:     "game",
+		Enabled:  true,
+		Priority: 10,
+		Match:    MatchRule{Type: MatchRegex, Value: `lethal.*company`},
+	}
+
+	proc := DetectedProcess{
+		Name:    "wine",
+		Aliases: []string{"lethal company.exe"},
+	}
+	if p.Matches(proc) < 0 {
+		t.Error("expected regex alias match")
+	}
+}

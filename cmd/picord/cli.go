@@ -15,6 +15,7 @@ import (
 	"text/tabwriter"
 
 	"github.com/pecodigos/picord/internal/config"
+	"github.com/pecodigos/picord/internal/monitor"
 	"github.com/pecodigos/picord/internal/profile"
 	"github.com/pecodigos/picord/internal/rpc"
 	"github.com/pecodigos/picord/internal/server"
@@ -42,6 +43,8 @@ func runCLI(args []string, debug bool) int {
 		return cmdCatalog(args[1:])
 	case "debug-rpc-image":
 		return cmdDebugRPCImage(args[1:])
+	case "debug-processes":
+		return cmdDebugProcesses()
 	case "help", "-h", "--help":
 		printUsage()
 		return 0
@@ -64,6 +67,7 @@ Commands:
   reload           Reload configuration from disk
   catalog          Catalog management (status, search, refresh)
   debug-rpc-image  Test a Discord Rich Presence image
+  debug-processes  Show process identity hints and Wine/Proton aliases
   help             Show this help message
 
 Override options:
@@ -355,6 +359,34 @@ func cmdDebugRPCImage(args []string) int {
 
 	client.ClearActivity()
 	fmt.Println("Activity cleared.")
+	return 0
+}
+
+func cmdDebugProcesses() int {
+	procs := monitor.ResolveProcessIdentities()
+	if len(procs) == 0 {
+		fmt.Println("No processes detected.")
+		return 0
+	}
+
+	w := tabwriter.NewWriter(os.Stdout, 0, 0, 2, ' ', 0)
+	fmt.Fprintln(w, "PID\tNAME\tSTEAM APP\tALIASES\tWINDOW TITLE")
+	for _, p := range procs {
+		steamAppID := p.SteamAppID
+		if steamAppID == "" {
+			steamAppID = "-"
+		}
+		aliases := "-"
+		if len(p.Aliases) > 0 {
+			aliases = strings.Join(p.Aliases, ", ")
+		}
+		title := p.WindowTitle
+		if title == "" {
+			title = "-"
+		}
+		fmt.Fprintf(w, "%d\t%s\t%s\t%s\t%s\n", p.PID, p.Name, steamAppID, aliases, title)
+	}
+	w.Flush()
 	return 0
 }
 

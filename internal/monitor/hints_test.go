@@ -139,9 +139,9 @@ func TestReadProcHints_DesktopIDFromEnv(t *testing.T) {
 
 func TestReadProcHints_EnvNotExposed(t *testing.T) {
 	setupMockProcHints(t, 1239, "game", []string{"/usr/bin/game"}, map[string]string{
-		"SECRET_KEY":   "should-not-appear",
-		"SteamAppId":   "620",
-		"HOME":         "/home/user",
+		"SECRET_KEY": "should-not-appear",
+		"SteamAppId": "620",
+		"HOME":       "/home/user",
 	})
 
 	_, _, _, steamAppID, _ := readProcHints(1239, "game")

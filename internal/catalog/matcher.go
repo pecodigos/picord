@@ -66,7 +66,19 @@ func (m *Matcher) Match(ctx context.Context, proc profile.DetectedProcess) *Matc
 		}
 	}
 
-	// 5. Exact normalized title match against process name
+	// 5. Aliases (Wine/Proton enriched identities)
+	for _, alias := range proc.Aliases {
+		entries, err := m.store.SearchByAlias(ctx, AliasExecutable, alias)
+		if err == nil && len(entries) > 0 {
+			return &MatchResult{Entry: entries[0], Confidence: 85, Reason: "alias:" + alias}
+		}
+		entries, err = m.store.SearchByAlias(ctx, AliasTitle, alias)
+		if err == nil && len(entries) > 0 {
+			return &MatchResult{Entry: entries[0], Confidence: 85, Reason: "alias_title:" + alias}
+		}
+	}
+
+	// 6. Exact normalized title match against process name
 	if proc.Name != "" {
 		entries, err := m.store.ExactTitleMatch(ctx, proc.Name)
 		if err == nil && len(entries) > 0 {

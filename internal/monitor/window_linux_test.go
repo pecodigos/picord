@@ -30,10 +30,10 @@ func TestWalkSwayTree(t *testing.T) {
 		Type: "root",
 		Nodes: []swayNode{
 			{
-				Type:    "con",
-				Name:    "Terminal",
-				PID:     1000,
-				Nodes:   []swayNode{},
+				Type:  "con",
+				Name:  "Terminal",
+				PID:   1000,
+				Nodes: []swayNode{},
 				Floating: []swayNode{
 					{Type: "floating_con", Name: "Popup", PID: 1001},
 				},
@@ -57,9 +57,9 @@ func TestWalkSwayTree(t *testing.T) {
 
 func TestDetectCompositor(t *testing.T) {
 	tests := []struct {
-		name       string
-		env        map[string]string
-		want       string
+		name string
+		env  map[string]string
+		want string
 	}{
 		{
 			name: "hyprland",
