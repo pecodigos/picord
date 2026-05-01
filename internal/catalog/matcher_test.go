@@ -318,8 +318,11 @@ func TestMatchResult_ToProfile(t *testing.T) {
 	if p.Name != "Portal 2" {
 		t.Errorf("name=%q, want Portal 2", p.Name)
 	}
-	if p.Activity.Details != "Portal 2" {
-		t.Errorf("details=%q, want Portal 2", p.Activity.Details)
+	if p.Activity.Details != "" {
+		t.Errorf("details=%q, want empty", p.Activity.Details)
+	}
+	if p.Activity.State != "Playing now" {
+		t.Errorf("state=%q, want Playing now", p.Activity.State)
 	}
 	// ImageModeGeneric now smartly falls back to a valid external URL when available.
 	if p.Activity.LargeImage != "https://example.com/img.jpg" {
