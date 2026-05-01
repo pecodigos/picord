@@ -739,6 +739,7 @@ func buildRichActivity(p *profile.Profile, proc *profile.DetectedProcess) *rpc.R
 	}
 
 	activity := &rpc.RichActivity{
+		Name:     p.Name,
 		Details:  act.Details,
 		State:    act.State,
 		Instance: false,

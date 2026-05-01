@@ -215,6 +215,7 @@ func (c *Client) sendCommand(cmd string, args map[string]any) (map[string]any, e
 }
 
 type RichActivity struct {
+	Name       string       `json:"name,omitempty"`
 	Details    string       `json:"details,omitempty"`
 	State      string       `json:"state,omitempty"`
 	Assets     *RichAssets  `json:"assets,omitempty"`
