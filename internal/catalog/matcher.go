@@ -265,8 +265,8 @@ func (mr *MatchResult) ToProfile(imgResolver ImageResolver) profile.Profile {
 	return profile.Profile{
 		Name: mr.Entry.Title,
 		Activity: profile.Activity{
-			Details:    "Playing " + mr.Entry.Title,
-			State:      sourceDisplayName(mr.Entry.Source),
+			Details:    mr.Entry.Title,
+			State:      "Playing now",
 			LargeImage: largeImage,
 			LargeText:  mr.Entry.Title,
 		},

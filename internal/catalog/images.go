@@ -142,7 +142,13 @@ func (r *ImageResolver) Resolve(entry Entry, profileActivityLargeImage string) s
 			return entry.ImageURL
 		}
 		if r.ExternalEnabled && entry.ImageURL != "" && isLocalIconURL(entry.ImageURL) {
-			return r.localIconHTTPURL(entry.ImageURL)
+			return r.localIconHTTPURL(entry.ImageURL, entry.Title)
+		}
+		// Try public icon URL for well-known apps even without a catalog image.
+		if r.ExternalEnabled {
+			if publicURL := publicIconURL(entry.Title); publicURL != "" {
+				return publicURL
+			}
 		}
 		if profileActivityLargeImage != "" {
 			return profileActivityLargeImage
@@ -156,7 +162,10 @@ func (r *ImageResolver) Resolve(entry Entry, profileActivityLargeImage string) s
 			return entry.ImageURL
 		}
 		if entry.ImageURL != "" && isLocalIconURL(entry.ImageURL) {
-			return r.localIconHTTPURL(entry.ImageURL)
+			return r.localIconHTTPURL(entry.ImageURL, entry.Title)
+		}
+		if publicURL := publicIconURL(entry.Title); publicURL != "" {
+			return publicURL
 		}
 		return r.GenericAssetKey
 	default:
@@ -164,10 +173,78 @@ func (r *ImageResolver) Resolve(entry Entry, profileActivityLargeImage string) s
 	}
 }
 
-func (r *ImageResolver) localIconHTTPURL(localiconURL string) string {
+func (r *ImageResolver) localIconHTTPURL(localiconURL string, entryTitle string) string {
+	// Prefer public HTTPS icon URLs for well-known apps via Simple Icons CDN.
+	if publicURL := publicIconURL(entryTitle); publicURL != "" {
+		return publicURL
+	}
+
 	key := strings.TrimPrefix(localiconURL, "localicon:")
 	if r.LocalAssetBase == "" || key == "" {
 		return r.GenericAssetKey
 	}
 	return fmt.Sprintf("%s/assets/picord-icons/%s", r.LocalAssetBase, key)
+}
+
+// publicIconURL returns a public HTTPS icon URL for well-known applications.
+// Returns "" if no icon is available.
+func publicIconURL(title string) string {
+	lower := strings.ToLower(title)
+
+	if url, ok := customIconURLs[lower]; ok {
+		return url
+	}
+
+	name, ok := simpleIconsMap[lower]
+	if !ok {
+		return ""
+	}
+	return "https://cdn.simpleicons.org/" + name
+}
+
+var simpleIconsMap = map[string]string{
+	"gimp":                           "gimp",
+	"gnu image manipulation program": "gimp",
+	"blender":                        "blender",
+	"obs studio":                     "obsstudio",
+	"krita":                          "krita",
+	"inkscape":                       "inkscape",
+	"audacity":                       "audacity",
+	"kdenlive":                       "kdenlive",
+	"davinci resolve":                "davinciresolve",
+	"visual studio code":             "visualstudiocode",
+	"code - oss":                     "visualstudiocode",
+	"vscodium":                       "vscodium",
+	"intellij idea":                  "intellijidea",
+	"pycharm":                        "pycharm",
+	"goland":                         "goland",
+	"godot engine":                   "godotengine",
+	"godot":                          "godotengine",
+	"unity":                          "unity",
+	"unity hub":                      "unity",
+	"unreal editor":                  "unrealengine",
+	"libreoffice writer":             "libreofficewriter",
+	"libreoffice calc":               "libreofficecalc",
+	"libreoffice impress":            "libreofficeimpress",
+	"freecad":                        "freecad",
+	"vlc":                            "vlc",
+	"vlc media player":               "vlc",
+	"mpv":                            "mpv",
+	"handbrake":                      "handbrake",
+	"thunderbird":                    "thunderbird",
+	"vscode":                         "visualstudiocode",
+}
+
+// customIconURLs provides HTTPS icon URLs for apps not on the Simple Icons CDN.
+var customIconURLs = map[string]string{
+	"duckstation":  "https://raw.githubusercontent.com/stenzek/duckstation/master/res/duck.png",
+	"pcsx2":        "https://raw.githubusercontent.com/PCSX2/pcsx2/master/bin/Resources/icons/AppIcon.png",
+	"rpcs3":        "https://raw.githubusercontent.com/RPCS3/rpcs3/master/rpcs3/rpcs3qt/resources/rpcs3.ico",
+	"dolphin":      "https://raw.githubusercontent.com/dolphin-emu/dolphin/master/Data/dolphin.png",
+	"retroarch":    "https://raw.githubusercontent.com/libretro/RetroArch/master/pkg/msvc-uwp/RetroArch-uwp/Assets/Logo.png",
+	"cemu":         "https://raw.githubusercontent.com/cemu-project/Cemu/main/dist/linux/cemu.svg",
+	"ppsspp":       "https://raw.githubusercontent.com/hrydgard/ppsspp/master/assets/icon_regular_72.png",
+	"yuzu":         "https://raw.githubusercontent.com/yuzu-emu/yuzu/main/dist/72-yuzu.png",
+	"citra":        "https://raw.githubusercontent.com/citra-emu/citra/master/dist/citra.png",
+	"xemu":         "https://raw.githubusercontent.com/xemu-project/xemu/master/ui/data/xemu.png",
 }

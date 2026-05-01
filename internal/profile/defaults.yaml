@@ -186,9 +186,9 @@
     type: process_name
     value: "duckstation"
   activity:
-    details: "Playing PlayStation 1"
-    state: "DuckStation"
-    large_image: "picord"
+    details: "DuckStation"
+    state: "Playing PlayStation 1"
+    large_image: "https://raw.githubusercontent.com/stenzek/duckstation/master/res/duck.png"
     large_text: "DuckStation"
   priority: 5
   enabled: true
