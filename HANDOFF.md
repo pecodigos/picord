@@ -265,3 +265,9 @@ bin/picord debug-processes --name "<game>" --json
 - The patched systray library is at `local/energye/systray/` — the `replace` directive in `go.mod` uses it. When updating `energye/systray`, re-apply the two fixes in `systray_unix.go`:
   1. `RegisterStatusNotifierItem(0, name)` (not `path`)
   2. `systrayReady()` at end of `nativeStart()` (after DBus setup)
+## 2026-05-01 (Hotfix) Work App Icons
+
+- Discord IPC doesn't support `data:image/png;base64,...` URIs for non-Steam apps, resulting in broken image output for work apps and emulators in `ImageModeExternalURL`.
+- Restored the `publicIconURL` routing inside `ImageResolver.Resolve()` that was inadvertently bypassed in the last iteration.
+- Upgraded the `simpleicons.org` URL string logic to route through an SVG-to-PNG proxy (`wsrv.nl`). It allows work apps like Gimp and Blender to securely load as valid external PNGs without base64 or localhost server issues that Discord flags.
+- Re-activated `customIconURLs` for standard emulators (DuckStation, PCSX2, etc.).

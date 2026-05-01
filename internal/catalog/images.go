@@ -3,7 +3,6 @@ package catalog
 import (
 	"bytes"
 	"crypto/sha256"
-	"encoding/base64"
 	"encoding/hex"
 	"fmt"
 	"image"
@@ -14,8 +13,6 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
-
-	"github.com/pecodigos/picord/internal/iconfinder"
 )
 
 // ImageCacheDir returns the directory for cached images.
@@ -144,6 +141,11 @@ func (r *ImageResolver) Resolve(entry Entry, profileActivityLargeImage string) s
 		if r.ExternalEnabled && entry.ImageURL != "" && isHTTPURL(entry.ImageURL) {
 			return entry.ImageURL
 		}
+		if r.ExternalEnabled {
+			if pub := publicIconURL(entry.Title); pub != "" {
+				return pub
+			}
+		}
 		if r.ExternalEnabled && entry.ImageURL != "" && isLocalIconURL(entry.ImageURL) {
 			return r.localIconHTTPURL(entry.ImageURL, entry.Title)
 		}
@@ -168,34 +170,94 @@ func (r *ImageResolver) Resolve(entry Entry, profileActivityLargeImage string) s
 }
 
 func (r *ImageResolver) localIconHTTPURL(localiconURL string, entryTitle string) string {
-	key := strings.TrimPrefix(localiconURL, "localicon:")
-	if key == "" {
-		return r.GenericAssetKey
+	// Try icon.horse CDN — returns PNG, HTTPS, works with Discord.
+	if url := appIconURL(entryTitle); url != "" {
+		return url
 	}
-
-	// Try to serve as a base64 data URI — Discord RPC can't fetch
-	// localhost/non-HTTPS URLs, but data URIs are embedded in the payload.
-	if dataURI, ok := r.dataURIForKey(key); ok {
-		return dataURI
-	}
-
 	return r.GenericAssetKey
 }
 
-func (r *ImageResolver) dataURIForKey(key string) (string, bool) {
-	path, ok := iconfinder.LookupPath(key)
-	if !ok {
-		return "", false
+// appIconURL returns a public HTTPS PNG icon URL for the given app title.
+// Uses icon.horse to fetch the website favicon/logo for known domains.
+func appIconURL(title string) string {
+	domain := appDomain(strings.ToLower(title))
+	if domain == "" {
+		return ""
 	}
-	data, err := os.ReadFile(path)
-	if err != nil || len(data) == 0 || len(data) > 256*1024 {
-		return "", false
+	return "https://icon.horse/icon/" + domain
+}
+
+var appDomainMap = map[string]string{
+	"gimp":                              "gimp.org",
+	"gnu image manipulation program":    "gimp.org",
+	"blender":                           "blender.org",
+	"obs studio":                        "obsproject.com",
+	"krita":                             "krita.org",
+	"inkscape":                          "inkscape.org",
+	"audacity":                          "audacityteam.org",
+	"kdenlive":                          "kdenlive.org",
+	"davinci resolve":                   "blackmagicdesign.com",
+	"visual studio code":                "code.visualstudio.com",
+	"code - oss":                        "code.visualstudio.com",
+	"vscodium":                          "vscodium.com",
+	"intellij idea":                     "jetbrains.com",
+	"pycharm":                           "jetbrains.com",
+	"goland":                            "jetbrains.com",
+	"godot engine":                      "godotengine.org",
+	"godot":                             "godotengine.org",
+	"unity":                             "unity.com",
+	"unity hub":                         "unity.com",
+	"unreal editor":                     "unrealengine.com",
+	"libreoffice writer":                "libreoffice.org",
+	"libreoffice calc":                  "libreoffice.org",
+	"libreoffice impress":               "libreoffice.org",
+	"libreoffice":                       "libreoffice.org",
+	"freecad":                           "freecad.org",
+	"vlc":                               "videolan.org",
+	"vlc media player":                  "videolan.org",
+	"mpv":                               "mpv.io",
+	"handbrake":                         "handbrake.fr",
+	"thunderbird":                       "thunderbird.net",
+	"vscode":                            "code.visualstudio.com",
+	"ardour":                            "ardour.org",
+	"darktable":                         "darktable.org",
+	"digikam":                           "digikam.org",
+	"openshot":                          "openshot.org",
+	"shotcut":                           "shotcut.org",
+	"calibre":                           "calibre-ebook.com",
+	"musescore":                         "musescore.org",
+	"scribus":                           "scribus.net",
+	"kicad":                             "kicad.org",
+	"arduino":                           "arduino.cc",
+	"processing":                        "processing.org",
+	"qgis":                              "qgis.org",
+	"hexchat":                           "hexchat.github.io",
+	"pidgin":                            "pidgin.im",
+	"signal":                            "signal.org",
+	"telegram":                          "telegram.org",
+	"element":                           "element.io",
+	"discord":                           "discord.com",
+	"spotify":                           "spotify.com",
+	"slack":                             "slack.com",
+	"zoom":                              "zoom.us",
+	"1password":                         "1password.com",
+	"bitwarden":                         "bitwarden.com",
+	"nextcloud":                         "nextcloud.com",
+	"firefox":                           "mozilla.org",
+	"chromium":                          "chromium.org",
+	"gnome builder":                     "apps.gnome.org",
+	"gnome boxes":                       "apps.gnome.org",
+}
+
+func appDomain(lowerTitle string) string {
+	if d, ok := appDomainMap[lowerTitle]; ok {
+		return d
 	}
-	mime := "image/png"
-	if strings.HasSuffix(strings.ToLower(path), ".jpg") || strings.HasSuffix(strings.ToLower(path), ".jpeg") {
-		mime = "image/jpeg"
+	// Try single-word titles as .org domains.
+	if !strings.Contains(lowerTitle, " ") && !strings.Contains(lowerTitle, ".") {
+		return lowerTitle + ".org"
 	}
-	return "data:" + mime + ";base64," + base64.StdEncoding.EncodeToString(data), true
+	return ""
 }
 
 // publicIconURL returns a public HTTPS icon URL for well-known applications.
@@ -211,7 +273,8 @@ func publicIconURL(title string) string {
 	if !ok {
 		return ""
 	}
-	return "https://cdn.simpleicons.org/" + name
+	// Use wsrv.nl proxy to convert simpleicons SVG to PNG, since Discord RPC ignores SVG.
+	return "https://wsrv.nl/?url=https://cdn.simpleicons.org/" + name + "&output=png"
 }
 
 var simpleIconsMap = map[string]string{
@@ -249,7 +312,7 @@ var simpleIconsMap = map[string]string{
 
 // customIconURLs provides HTTPS icon URLs for apps not on the Simple Icons CDN.
 var customIconURLs = map[string]string{
-	"duckstation":  "https://raw.githubusercontent.com/stenzek/duckstation/master/res/duck.png",
+	"duckstation":  "https://raw.githubusercontent.com/stenzek/duckstation/master/data/resources/images/duck.png",
 	"pcsx2":        "https://raw.githubusercontent.com/PCSX2/pcsx2/master/bin/Resources/icons/AppIcon.png",
 	"rpcs3":        "https://raw.githubusercontent.com/RPCS3/rpcs3/master/rpcs3/rpcs3qt/resources/rpcs3.ico",
 	"dolphin":      "https://raw.githubusercontent.com/dolphin-emu/dolphin/master/Data/dolphin.png",
