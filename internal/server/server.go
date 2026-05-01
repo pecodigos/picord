@@ -12,6 +12,7 @@ import (
 
 	"github.com/pecodigos/picord/internal/catalog"
 	"github.com/pecodigos/picord/internal/config"
+	"github.com/pecodigos/picord/internal/iconfinder"
 	"github.com/pecodigos/picord/internal/profile"
 )
 
@@ -236,6 +237,9 @@ func (srv *Server) Handler() http.Handler {
 	if _, err := os.Stat(assetsDir); err == nil {
 		mux.Handle("/assets/", http.StripPrefix("/assets/", http.FileServer(http.Dir(assetsDir))))
 	}
+
+	// Serve local desktop icons resolved by the iconfinder registry.
+	mux.HandleFunc("/assets/picord-icons/", srv.handleLocalIcon)
 
 	return withSecurity(srv.token, mux)
 }
@@ -825,4 +829,24 @@ func StartServer(addr string, srv *Server) *http.Server {
 		}
 	}()
 	return httpServer
+}
+
+func (srv *Server) handleLocalIcon(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+	// Extract hash key from /assets/picord-icons/{hash}
+	key := strings.TrimPrefix(r.URL.Path, "/assets/picord-icons/")
+	if key == "" || strings.Contains(key, "/") {
+		http.NotFound(w, r)
+		return
+	}
+	path, ok := iconfinder.LookupPath(key)
+	if !ok {
+		http.NotFound(w, r)
+		return
+	}
+	// Prevent traversal outside the registered set.
+	http.ServeFile(w, r, path)
 }

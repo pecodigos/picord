@@ -8,6 +8,8 @@ import (
 	"path/filepath"
 	"strings"
 	"time"
+
+	"github.com/pecodigos/picord/internal/iconfinder"
 )
 
 // DesktopPaths returns candidate directories containing .desktop files.
@@ -62,8 +64,11 @@ func (s *DesktopSource) Refresh(ctx context.Context, store *Store, opts RefreshO
 			if err != nil || df.Name == "" {
 				continue
 			}
-			// Also skip terminal apps and NoDisplay apps
+			// Also skip terminal apps, NoDisplay apps, and utilities.
 			if df.Terminal || df.NoDisplay {
+				continue
+			}
+			if isDesktopUtility(&df) {
 				continue
 			}
 
@@ -71,6 +76,11 @@ func (s *DesktopSource) Refresh(ctx context.Context, store *Store, opts RefreshO
 			imgURL := ""
 			if strings.HasPrefix(df.Icon, "http://") || strings.HasPrefix(df.Icon, "https://") {
 				imgURL = df.Icon
+			} else if df.Icon != "" {
+				if resolved, err := iconfinder.Resolve(df.Icon); err == nil {
+					key := iconfinder.RegisterPath(resolved)
+					imgURL = "localicon:" + key
+				}
 			}
 
 			kind := EntryKindApplication
@@ -134,6 +144,55 @@ func (df *desktopFile) IsGame() bool {
 	}
 	cats := strings.ToLower(df.Categories)
 	return strings.Contains(cats, "game")
+}
+
+// isDesktopUtility returns true if the .desktop file appears to be a system
+// utility or tool that should not be tracked as Rich Presence (screenshot
+// tools, audio mixers, system monitors, calculators, etc.). Apps that are
+// neither games nor work tools are classified as utilities.
+func isDesktopUtility(df *desktopFile) bool {
+	if df.IsGame() {
+		return false
+	}
+	cats := strings.ToLower(df.Categories)
+	if cats == "" {
+		return false
+	}
+
+	// Primary category — the first entry before any semicolon.
+	primary := cats
+	if idx := strings.IndexByte(cats, ';'); idx >= 0 {
+		primary = cats[:idx]
+	}
+
+	// Utility / System / Settings as primary → skip.
+	switch primary {
+	case "utility", "system", "settings", "desktopsettings", "hardwaresettings",
+		"filetools", "filemanager", "terminalemulator", "consoleonly",
+		"monitor", "screensaver", "accessibility":
+		return true
+	}
+
+	// Mixed utility subcategories → skip even when secondary.
+	utilitySub := []string{
+		";system;", ";settings;", ";terminalemulator;", ";filetools;",
+		";screenshot;", ";scanning;", ";ocr;",
+	}
+	for _, sub := range utilitySub {
+		if strings.Contains(cats, sub) {
+			return true
+		}
+	}
+
+	// Calculator, Dictionary, Translation are almost never work tools.
+	if strings.HasPrefix(cats, "calculator") || primary == "calculator" {
+		return true
+	}
+	if primary == "dictionary" || primary == "translation" {
+		return true
+	}
+
+	return false
 }
 
 func desktopExecBase(execLine string) string {
@@ -283,6 +342,9 @@ func isExcludedDesktopApp(desktopID string) bool {
 		"tilix", "guake", "yakuake", "tilda", "qterminal",
 		"st", "xterm", "urxvt", "rxvt", "eterm",
 		"hyper", "tabby", "warp", "rio",
+		// Screenshot and utility tools
+		"flameshot", "ksnip", "spectacle", "grim", "slurp",
+		"pavucontrol", "pavucontrol-qt", "gnome-screenshot",
 	}
 	for _, e := range exactExcludes {
 		if lower == e {
@@ -377,6 +439,9 @@ func deleteExcludedDesktopEntries(ctx context.Context, store *Store) error {
 		"tilix", "guake", "yakuake", "tilda", "qterminal",
 		"st", "xterm", "urxvt", "rxvt", "eterm",
 		"hyper", "tabby", "warp", "rio",
+		// Screenshot and utility tools
+		"flameshot", "ksnip", "spectacle",
+		"pavucontrol", "pavucontrol-qt",
 	} {
 		excludes = append(excludes, "desktop:"+id)
 	}

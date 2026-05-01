@@ -919,6 +919,7 @@ func cmdDebugScan(args []string) int {
 			Mode:            catalog.ImageMode(cfg.Images.Mode),
 			GenericAssetKey: cfg.Images.GenericAssetKey,
 			ExternalEnabled: cfg.Images.ExternalValidated,
+			LocalAssetBase:  fmt.Sprintf("http://127.0.0.1:%d", cfg.WebPort),
 		}
 
 		pm := profile.NewManager(cfg.Profiles, profile.DefaultProfiles())

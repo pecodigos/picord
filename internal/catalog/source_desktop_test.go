@@ -285,3 +285,98 @@ func TestDesktopSource_RefreshCleansUpExcludedEntries(t *testing.T) {
 		t.Errorf("expected 0 firefox entries after cleanup, got %d", len(after))
 	}
 }
+
+func TestIsDesktopUtility(t *testing.T) {
+	cases := []struct {
+		cats string
+		want bool
+	}{
+		// Work tools — NOT utility
+		{"Graphics;2DGraphics;RasterGraphics;", false}, // GIMP
+		{"Graphics;3DGraphics;", false},                  // Blender
+		{"Development;IDE;TextEditor;", false},            // VSCode
+		{"AudioVideo;Recorder;", false},                   // OBS
+		{"AudioVideo;AudioEditing;", false},               // Audacity
+		{"Office;WordProcessor;", false},                  // LibreOffice Writer
+		{"Development;WebDevelopment;", false},            // Web dev tools
+		{"Engineering;CAD;", false},                       // FreeCAD
+
+		// Games — NOT utility (IsGame returns true, so isDesktopUtility returns false)
+		{"Game;ActionGame;", false},
+		{"Game;AdventureGame;", false},
+
+		// Utilities
+		{"Utility;Graphics;", true},                       // Flameshot
+		{"Utility;Calculator;", true},                     // Calculator
+		{"Utility;TextEditor;", true},                     // gedit
+		{"System;", true},                                 // System tool
+		{"Settings;DesktopSettings;", true},               // Settings
+		{"System;Monitor;", true},                         // System monitor
+		{"AudioVideo;Audio;Mixer;Settings;", true},        // pavucontrol (has ;settings;)
+		{"Development;Debugger;System;", true},             // debugger with system sub
+		{"Network;System;", true},                         // network config
+
+		// No categories — NOT utility (ambiguous, keep)
+		{"", false},
+	}
+	for _, tc := range cases {
+		df := &desktopFile{Categories: tc.cats}
+		got := isDesktopUtility(df)
+		if got != tc.want {
+			t.Errorf("isDesktopUtility(cats=%q) = %v, want %v", tc.cats, got, tc.want)
+		}
+	}
+}
+
+func TestDesktopSource_RefreshSkipsUtilities(t *testing.T) {
+	dir := t.TempDir()
+	store, err := Open(filepath.Join(dir, "catalog.db"))
+	if err != nil {
+		t.Fatalf("Open failed: %v", err)
+	}
+	defer store.Close()
+
+	appDir := filepath.Join(dir, "applications")
+	if err := os.MkdirAll(appDir, 0755); err != nil {
+		t.Fatal(err)
+	}
+
+	// Flameshot — screenshot utility, should be skipped.
+	flameshotDesktop := `[Desktop Entry]
+Name=Flameshot
+Exec=/usr/bin/flameshot
+Icon=flameshot
+Categories=Utility;Graphics;
+`
+	os.WriteFile(filepath.Join(appDir, "flameshot.desktop"), []byte(flameshotDesktop), 0644)
+
+	// Blender — work tool, should be kept.
+	blenderDesktop := `[Desktop Entry]
+Name=Blender
+Exec=/usr/bin/blender
+Icon=blender
+Categories=Graphics;3DGraphics;
+`
+	os.WriteFile(filepath.Join(appDir, "blender.desktop"), []byte(blenderDesktop), 0644)
+
+	src := &DesktopSource{Roots: []string{appDir}}
+	ctx := context.Background()
+	if err := src.Refresh(ctx, store, RefreshOptions{}); err != nil {
+		t.Fatalf("Refresh failed: %v", err)
+	}
+
+	// Flameshot should NOT be in catalog.
+	flResults, _ := store.SearchByAlias(ctx, AliasDesktopID, "flameshot")
+	if len(flResults) != 0 {
+		t.Errorf("expected 0 flameshot results, got %d", len(flResults))
+	}
+
+	// Blender SHOULD be in catalog.
+	blResults, err := store.SearchByAlias(ctx, AliasDesktopID, "blender")
+	if err != nil {
+		t.Fatalf("SearchByAlias failed: %v", err)
+	}
+	if len(blResults) != 1 {
+		t.Errorf("expected 1 blender result, got %d", len(blResults))
+	}
+}

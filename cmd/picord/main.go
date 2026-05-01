@@ -265,6 +265,7 @@ func runDaemonWithOptions(debug bool, opts daemonOptions) int {
 				Mode:            catalog.ImageMode(cfg.Images.Mode),
 				GenericAssetKey: cfg.Images.GenericAssetKey,
 				ExternalEnabled: cfg.Images.ExternalValidated,
+				LocalAssetBase:  fmt.Sprintf("http://127.0.0.1:%d", cfg.WebPort),
 			}
 			if cfg.Catalog.AutoRefresh {
 				sources, skipped := catalog.BuildSources(cfg.Catalog.Sources)
@@ -305,6 +306,7 @@ func runDaemonWithOptions(debug bool, opts daemonOptions) int {
 				Mode:            catalog.ImageMode(newCfg.Images.Mode),
 				GenericAssetKey: newCfg.Images.GenericAssetKey,
 				ExternalEnabled: newCfg.Images.ExternalValidated,
+				LocalAssetBase:  fmt.Sprintf("http://127.0.0.1:%d", newCfg.WebPort),
 			}
 			// Restart refresher if sources or interval changed.
 			if catalogRefresher != nil {
@@ -718,6 +720,9 @@ func isExcludedCatalogEntry(title string) bool {
 		"hyper", "tabby", "warp", "rio",
 		// Shells
 		"bash", "zsh", "fish", "sh", "dash", "csh", "tcsh",
+		// Screenshot / audio utility tools
+		"flameshot", "ksnip", "spectacle", "grim", "slurp",
+		"pavucontrol", "volume control", "gnome-screenshot",
 	}
 	for _, e := range excludedTitles {
 		if lower == e {

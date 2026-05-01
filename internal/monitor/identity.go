@@ -98,6 +98,9 @@ func isExcludedApp(name string) bool {
 		"tilix", "guake", "yakuake", "tilda", "qterminal",
 		"st", "xterm", "urxvt", "rxvt", "eterm",
 		"hyper", "tabby", "warp", "rio",
+		// Screenshot / audio / utility tools
+		"flameshot", "ksnip", "spectacle", "grim", "slurp",
+		"pavucontrol", "pavucontrol-qt", "gnome-screenshot",
 		// Shells (when detected as standalone processes)
 		"bash", "zsh", "fish", "sh", "dash", "csh", "tcsh",
 	}

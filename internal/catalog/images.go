@@ -106,6 +106,10 @@ func isHTTPURL(s string) bool {
 	return strings.HasPrefix(s, "http://") || strings.HasPrefix(s, "https://")
 }
 
+func isLocalIconURL(s string) bool {
+	return strings.HasPrefix(s, "localicon:")
+}
+
 type ImageMode string
 
 const (
@@ -119,6 +123,7 @@ type ImageResolver struct {
 	Mode            ImageMode
 	GenericAssetKey string
 	ExternalEnabled bool // set only after live validation
+	LocalAssetBase  string // base URL for serving local icons (e.g. "http://127.0.0.1:17970")
 }
 
 // Resolve returns the image reference to send to Discord.
@@ -136,6 +141,9 @@ func (r *ImageResolver) Resolve(entry Entry, profileActivityLargeImage string) s
 		if r.ExternalEnabled && entry.ImageURL != "" && isHTTPURL(entry.ImageURL) {
 			return entry.ImageURL
 		}
+		if r.ExternalEnabled && entry.ImageURL != "" && isLocalIconURL(entry.ImageURL) {
+			return r.localIconHTTPURL(entry.ImageURL)
+		}
 		if profileActivityLargeImage != "" {
 			return profileActivityLargeImage
 		}
@@ -147,8 +155,19 @@ func (r *ImageResolver) Resolve(entry Entry, profileActivityLargeImage string) s
 		if entry.ImageURL != "" && isHTTPURL(entry.ImageURL) {
 			return entry.ImageURL
 		}
+		if entry.ImageURL != "" && isLocalIconURL(entry.ImageURL) {
+			return r.localIconHTTPURL(entry.ImageURL)
+		}
 		return r.GenericAssetKey
 	default:
 		return r.GenericAssetKey
 	}
+}
+
+func (r *ImageResolver) localIconHTTPURL(localiconURL string) string {
+	key := strings.TrimPrefix(localiconURL, "localicon:")
+	if r.LocalAssetBase == "" || key == "" {
+		return r.GenericAssetKey
+	}
+	return fmt.Sprintf("%s/assets/picord-icons/%s", r.LocalAssetBase, key)
 }
