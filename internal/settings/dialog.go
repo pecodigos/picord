@@ -1,6 +1,7 @@
 package settings
 
 import (
+	"fmt"
 	"os"
 	"path/filepath"
 	"strconv"
@@ -10,10 +11,15 @@ import (
 	"github.com/pecodigos/picord/internal/config"
 )
 
-const desktopEntryContent = `[Desktop Entry]
+func desktopEntryContent() string {
+	execPath := "picord"
+	if p, err := os.Executable(); err == nil {
+		execPath = p
+	}
+	return fmt.Sprintf(`[Desktop Entry]
 Name=Picord
 Comment=Universal Discord Rich Presence Manager
-Exec=picord run
+Exec=%s run --tray
 Icon=picord
 Type=Application
 Categories=Utility;
@@ -21,7 +27,8 @@ Terminal=false
 StartupNotify=false
 X-GNOME-Autostart-enabled=true
 X-GNOME-Autostart-Delay=5
-`
+`, execPath)
+}
 
 type Dialog struct {
 	cfg    config.AppConfig
@@ -246,7 +253,7 @@ func loginAutostartEnabled() bool {
 func enableLoginAutostart() {
 	path := autostartPath()
 	os.MkdirAll(filepath.Dir(path), 0755)
-	os.WriteFile(path, []byte(desktopEntryContent), 0644)
+	os.WriteFile(path, []byte(desktopEntryContent()), 0644)
 }
 
 func disableLoginAutostart() {

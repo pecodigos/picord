@@ -2,7 +2,13 @@ package tray
 
 import (
 	_ "embed"
+	"errors"
+	"fmt"
+	"log"
 	"os"
+	"time"
+
+	"github.com/godbus/dbus/v5"
 
 	"github.com/energye/systray"
 
@@ -27,11 +33,50 @@ var (
 )
 
 func Run(actions Actions, iconPath string) {
+	if err := waitForTrayHost(60 * time.Second); err != nil {
+		log.Printf("[tray] %v, launching anyway (tray icon may be delayed)", err)
+	}
 	systray.Run(func() { onReady(actions, iconPath) }, func() {
 		if actions.Quit != nil {
 			actions.Quit()
 		}
 	})
+}
+
+// waitForTrayHost polls the D-Bus session bus until org.kde.StatusNotifierWatcher
+// is available, or until timeout is reached. This ensures the tray host (waybar,
+// KDE panel, etc.) is ready before systray.Run() attempts to register the icon.
+func waitForTrayHost(timeout time.Duration) error {
+	deadline := time.Now().Add(timeout)
+	var lastErr error
+
+	for time.Now().Before(deadline) {
+		conn, err := dbus.SessionBus()
+		if err != nil {
+			lastErr = err
+			time.Sleep(2 * time.Second)
+			continue
+		}
+
+		var hasOwner bool
+		err = conn.BusObject().Call(
+			"org.freedesktop.DBus.NameHasOwner", 0,
+			"org.kde.StatusNotifierWatcher",
+		).Store(&hasOwner)
+		conn.Close()
+
+		if err == nil && hasOwner {
+			return nil
+		}
+		if !hasOwner {
+			lastErr = errors.New("StatusNotifierWatcher not registered on session bus")
+		} else {
+			lastErr = err
+		}
+		time.Sleep(2 * time.Second)
+	}
+
+	return fmt.Errorf("tray host not available after %v: %v", timeout, lastErr)
 }
 
 func loadIcon(path string) []byte {
