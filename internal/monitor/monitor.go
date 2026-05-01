@@ -78,6 +78,16 @@ func (m *Monitor) ScanNow() []profile.DetectedProcess {
 	return scanProcesses(m.scanAll)
 }
 
+// ForceScan runs a scan and invokes the callback immediately, even outside
+// the normal ticker loop. Used when auto-detect is re-enabled so the user
+// sees presence right away instead of waiting for the next tick.
+func (m *Monitor) ForceScan() {
+	procs := scanProcesses(m.scanAll)
+	if m.callback != nil {
+		m.callback(procs)
+	}
+}
+
 func scanProcesses(scanAll bool) []profile.DetectedProcess {
 	if scanAll {
 		// Full resolver path: read expensive data for all processes.

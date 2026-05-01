@@ -357,6 +357,8 @@ func runDaemonWithOptions(debug bool, opts daemonOptions) int {
 
 	webServer := server.New(state, profileMgr, catalogStore)
 	webServer.SetToken(apiToken)
+
+	var procMonitor *monitor.Monitor
 	webServer.SetSettingsProvider(func() config.AppConfig {
 		if configMgr != nil {
 			return configMgr.Config()
@@ -400,9 +402,11 @@ func runDaemonWithOptions(debug bool, opts daemonOptions) int {
 		if !enabled {
 			rpcMgr.clearActivity()
 			tray.UpdateStatus("Disabled")
-		}
-		if enabled {
+		} else {
 			tray.UpdateStatus("Idle")
+			if procMonitor != nil {
+				procMonitor.ForceScan()
+			}
 		}
 	}
 	webServer.OnSettingsSaved = func(newCfg config.AppConfig) error {
@@ -433,7 +437,7 @@ func runDaemonWithOptions(debug bool, opts daemonOptions) int {
 
 	httpServer := server.StartServer(fmt.Sprintf("127.0.0.1:%d", cfg.WebPort), webServer)
 
-	procMonitor := monitor.NewWithOptions(cfg.PollInterval, cfg.ScanAllProcesses, func(procs []profile.DetectedProcess) {
+	procMonitor = monitor.NewWithOptions(cfg.PollInterval, cfg.ScanAllProcesses, func(procs []profile.DetectedProcess) {
 		mode := server.ScanModeIPCCandidates
 		if cfg.ScanAllProcesses {
 			mode = server.ScanModeAll
