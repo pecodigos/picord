@@ -188,7 +188,6 @@
   activity:
     details: "Playing PlayStation 1"
     state: "via DuckStation"
-    large_image: "https://raw.githubusercontent.com/stenzek/duckstation/master/res/duck.png"
     large_text: "DuckStation"
   priority: 5
   enabled: true

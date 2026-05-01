@@ -832,7 +832,7 @@ func StartServer(addr string, srv *Server) *http.Server {
 }
 
 func (srv *Server) handleLocalIcon(w http.ResponseWriter, r *http.Request) {
-	if r.Method != http.MethodGet {
+	if r.Method != http.MethodGet && r.Method != http.MethodHead {
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 		return
 	}

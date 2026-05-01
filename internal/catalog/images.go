@@ -144,12 +144,6 @@ func (r *ImageResolver) Resolve(entry Entry, profileActivityLargeImage string) s
 		if r.ExternalEnabled && entry.ImageURL != "" && isLocalIconURL(entry.ImageURL) {
 			return r.localIconHTTPURL(entry.ImageURL, entry.Title)
 		}
-		// Try public icon URL for well-known apps even without a catalog image.
-		if r.ExternalEnabled {
-			if publicURL := publicIconURL(entry.Title); publicURL != "" {
-				return publicURL
-			}
-		}
 		if profileActivityLargeImage != "" {
 			return profileActivityLargeImage
 		}
@@ -164,9 +158,6 @@ func (r *ImageResolver) Resolve(entry Entry, profileActivityLargeImage string) s
 		if entry.ImageURL != "" && isLocalIconURL(entry.ImageURL) {
 			return r.localIconHTTPURL(entry.ImageURL, entry.Title)
 		}
-		if publicURL := publicIconURL(entry.Title); publicURL != "" {
-			return publicURL
-		}
 		return r.GenericAssetKey
 	default:
 		return r.GenericAssetKey
@@ -174,11 +165,6 @@ func (r *ImageResolver) Resolve(entry Entry, profileActivityLargeImage string) s
 }
 
 func (r *ImageResolver) localIconHTTPURL(localiconURL string, entryTitle string) string {
-	// Prefer public HTTPS icon URLs for well-known apps via Simple Icons CDN.
-	if publicURL := publicIconURL(entryTitle); publicURL != "" {
-		return publicURL
-	}
-
 	key := strings.TrimPrefix(localiconURL, "localicon:")
 	if r.LocalAssetBase == "" || key == "" {
 		return r.GenericAssetKey
