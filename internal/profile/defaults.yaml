@@ -183,8 +183,8 @@
 
 - name: "DuckStation"
   match:
-    type: process_name
-    value: "duckstation"
+    type: regex
+    value: "(?i)duckstation"
   activity:
     details: "Playing PlayStation 1"
     state: "via DuckStation"
