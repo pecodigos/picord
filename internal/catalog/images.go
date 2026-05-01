@@ -3,6 +3,7 @@ package catalog
 import (
 	"bytes"
 	"crypto/sha256"
+	"encoding/base64"
 	"encoding/hex"
 	"fmt"
 	"image"
@@ -13,6 +14,8 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+
+	"github.com/pecodigos/picord/internal/iconfinder"
 )
 
 // ImageCacheDir returns the directory for cached images.
@@ -166,10 +169,33 @@ func (r *ImageResolver) Resolve(entry Entry, profileActivityLargeImage string) s
 
 func (r *ImageResolver) localIconHTTPURL(localiconURL string, entryTitle string) string {
 	key := strings.TrimPrefix(localiconURL, "localicon:")
-	if r.LocalAssetBase == "" || key == "" {
+	if key == "" {
 		return r.GenericAssetKey
 	}
-	return fmt.Sprintf("%s/assets/picord-icons/%s", r.LocalAssetBase, key)
+
+	// Try to serve as a base64 data URI — Discord RPC can't fetch
+	// localhost/non-HTTPS URLs, but data URIs are embedded in the payload.
+	if dataURI, ok := r.dataURIForKey(key); ok {
+		return dataURI
+	}
+
+	return r.GenericAssetKey
+}
+
+func (r *ImageResolver) dataURIForKey(key string) (string, bool) {
+	path, ok := iconfinder.LookupPath(key)
+	if !ok {
+		return "", false
+	}
+	data, err := os.ReadFile(path)
+	if err != nil || len(data) == 0 || len(data) > 256*1024 {
+		return "", false
+	}
+	mime := "image/png"
+	if strings.HasSuffix(strings.ToLower(path), ".jpg") || strings.HasSuffix(strings.ToLower(path), ".jpeg") {
+		mime = "image/jpeg"
+	}
+	return "data:" + mime + ";base64," + base64.StdEncoding.EncodeToString(data), true
 }
 
 // publicIconURL returns a public HTTPS icon URL for well-known applications.
