@@ -58,9 +58,9 @@ func setupDebugLogging() {
 		}
 	}
 	logDir := filepath.Join(stateDir, "picord")
-	os.MkdirAll(logDir, 0755)
+	os.MkdirAll(logDir, 0700)
 	logPath := filepath.Join(logDir, "picord.log")
-	f, err := os.OpenFile(logPath, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0644)
+	f, err := os.OpenFile(logPath, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0600)
 	if err != nil {
 		log.Printf("Cannot open debug log: %v", err)
 		return
@@ -815,7 +815,7 @@ func cleanup(rm *rpcManager, httpServer *http.Server, configMgr *config.Manager,
 }
 
 func acquireLock(pidFile string) (func(), error) {
-	if err := os.MkdirAll(filepath.Dir(pidFile), 0755); err != nil {
+	if err := os.MkdirAll(filepath.Dir(pidFile), 0700); err != nil {
 		return nil, fmt.Errorf("create state dir: %w", err)
 	}
 
@@ -831,7 +831,7 @@ func acquireLock(pidFile string) (func(), error) {
 		}
 	}
 
-	if err := os.WriteFile(pidFile, []byte(strconv.Itoa(os.Getpid())+"\n"), 0644); err != nil {
+	if err := os.WriteFile(pidFile, []byte(strconv.Itoa(os.Getpid())+"\n"), 0600); err != nil {
 		return nil, fmt.Errorf("write pid file: %w", err)
 	}
 

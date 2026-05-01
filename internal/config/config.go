@@ -217,7 +217,7 @@ func Save(path string, cfg AppConfig) error {
 	if err := os.MkdirAll(filepath.Dir(path), 0755); err != nil {
 		return fmt.Errorf("create config dir: %w", err)
 	}
-	return os.WriteFile(path, data, 0644)
+	return os.WriteFile(path, data, 0600)
 }
 
 func NewManager(path string, onChange func(AppConfig)) (*Manager, error) {

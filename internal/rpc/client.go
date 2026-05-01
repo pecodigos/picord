@@ -147,6 +147,8 @@ func (c *Client) writeFrame(op int32, data []byte) error {
 	return nil
 }
 
+const maxFrameSize = 65536
+
 func (c *Client) readFrame() ([]byte, error) {
 	header := make([]byte, 8)
 	if _, err := io.ReadFull(c.conn, header); err != nil {
@@ -158,6 +160,10 @@ func (c *Client) readFrame() ([]byte, error) {
 
 	if op == opClose {
 		return nil, errors.New("received close frame from Discord")
+	}
+
+	if length > maxFrameSize {
+		return nil, fmt.Errorf("frame too large: %d bytes (max %d)", length, maxFrameSize)
 	}
 
 	payload := make([]byte, length)

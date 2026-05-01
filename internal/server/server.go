@@ -1,6 +1,7 @@
 package server
 
 import (
+	"crypto/subtle"
 	"encoding/json"
 	"log"
 	"net/http"
@@ -22,6 +23,8 @@ const (
 	ScanModeAll           ScanMode = "all_processes"
 	ScanModeIPCCandidates ScanMode = "ipc_candidates"
 )
+
+const maxBodySize = 10 << 20 // 10 MiB
 
 type ScanState string
 
@@ -170,11 +173,11 @@ func sanitizeDetected(procs []profile.DetectedProcess, verbose bool) []sanitized
 	out := make([]sanitizedProcess, len(procs))
 	for i, p := range procs {
 		sp := sanitizedProcess{
-			PID:         p.PID,
-			Name:        p.Name,
-			WindowTitle: p.WindowTitle,
+			PID:  p.PID,
+			Name: p.Name,
 		}
 		if verbose {
+			sp.WindowTitle = p.WindowTitle
 			sp.SteamAppID = p.SteamAppID
 			sp.DesktopID = p.DesktopID
 			sp.Aliases = p.Aliases
@@ -306,6 +309,7 @@ func (srv *Server) handleProfiles(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, userProfiles)
 
 	case http.MethodPost:
+		r.Body = http.MaxBytesReader(w, r.Body, maxBodySize)
 		var p profile.Profile
 		if err := json.NewDecoder(r.Body).Decode(&p); err != nil {
 			writeError(w, "invalid profile JSON", 400)
@@ -348,10 +352,33 @@ func (srv *Server) handleProfileByID(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, p)
 
 	case http.MethodPut:
-		var p profile.Profile
-		if err := json.NewDecoder(r.Body).Decode(&p); err != nil {
+		r.Body = http.MaxBytesReader(w, r.Body, maxBodySize)
+		// Use a local struct with *bool for Enabled to distinguish an
+		// explicit "enabled": false from an omitted field (Go zero-value).
+		var req struct {
+			Name       string           `json:"name"`
+			Match      profile.MatchRule `json:"match"`
+			Activity   profile.Activity `json:"activity"`
+			Priority   int              `json:"priority"`
+			DiscordApp string           `json:"discord_app"`
+			Enabled    *bool            `json:"enabled,omitempty"`
+		}
+		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 			writeError(w, "invalid profile JSON", 400)
 			return
+		}
+		p := profile.Profile{
+			Name:       req.Name,
+			Match:      req.Match,
+			Activity:   req.Activity,
+			Priority:   req.Priority,
+			DiscordApp: req.DiscordApp,
+		}
+		if req.Enabled != nil {
+			p.Enabled = *req.Enabled
+		} else if existing := srv.profileManager.Get(name); existing != nil {
+			// Omitted — preserve existing enabled state.
+			p.Enabled = existing.Enabled
 		}
 		// Support rename: if the request body name differs from the URL name,
 		// delete the old profile and add the new one.
@@ -390,6 +417,7 @@ func (srv *Server) handleDefaults(w http.ResponseWriter, r *http.Request) {
 func (srv *Server) handleOverride(w http.ResponseWriter, r *http.Request) {
 	switch r.Method {
 	case http.MethodPost:
+		r.Body = http.MaxBytesReader(w, r.Body, maxBodySize)
 		var p profile.Profile
 		if err := json.NewDecoder(r.Body).Decode(&p); err != nil {
 			writeError(w, "invalid profile JSON", 400)
@@ -456,6 +484,7 @@ func (srv *Server) handleSettings(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, settingsFromConfig(srv.currentConfig(), srv.state.AutoDetectEnabled()))
 
 	case http.MethodPut:
+		r.Body = http.MaxBytesReader(w, r.Body, maxBodySize)
 		var patch settingsPatch
 		if err := json.NewDecoder(r.Body).Decode(&patch); err != nil {
 			writeError(w, "invalid JSON", 400)
@@ -470,21 +499,50 @@ func (srv *Server) handleSettings(w http.ResponseWriter, r *http.Request) {
 			cfg.ShowTrayIcon = *patch.ShowTrayIcon
 		}
 		if patch.Catalog != nil {
+			// Merge fields individually to avoid zeroing out sibling
+			// fields when the client sends a partial catalog update.
 			secret := cfg.Catalog.SteamGridDBAPIKey
-			cfg.Catalog = *patch.Catalog
+			if patch.Catalog.Enabled {
+				cfg.Catalog.Enabled = true
+			}
+			if patch.Catalog.AutoRefresh {
+				cfg.Catalog.AutoRefresh = true
+			}
+			if patch.Catalog.Sources != nil {
+				cfg.Catalog.Sources = patch.Catalog.Sources
+			}
+			if patch.Catalog.RefreshHours > 0 {
+				cfg.Catalog.RefreshHours = patch.Catalog.RefreshHours
+			}
+			if patch.Catalog.SteamGridDBAPIKey != "" {
+				cfg.Catalog.SteamGridDBAPIKey = patch.Catalog.SteamGridDBAPIKey
+			}
+			// If no new key was explicitly provided, keep the existing one.
 			if cfg.Catalog.SteamGridDBAPIKey == "" {
 				cfg.Catalog.SteamGridDBAPIKey = secret
 			}
 		}
 		if patch.Images != nil {
-			cfg.Images = *patch.Images
+			if patch.Images.Mode != "" {
+				cfg.Images.Mode = patch.Images.Mode
+			}
+			if patch.Images.GenericAssetKey != "" {
+				cfg.Images.GenericAssetKey = patch.Images.GenericAssetKey
+			}
+			cfg.Images.CacheEnabled = patch.Images.CacheEnabled
+			cfg.Images.ExternalValidated = patch.Images.ExternalValidated
+			if patch.Images.MaxCacheMB > 0 {
+				cfg.Images.MaxCacheMB = patch.Images.MaxCacheMB
+			}
 		}
 		if patch.Detection != nil {
-			cfg.Detection = *patch.Detection
+			cfg.Detection.ShowGames = patch.Detection.ShowGames
+			cfg.Detection.ShowTools = patch.Detection.ShowTools
 		}
 		if srv.OnSettingsSaved != nil {
 			if err := srv.OnSettingsSaved(cfg); err != nil {
-				writeError(w, err.Error(), 500)
+				log.Printf("settings save error: %v", err)
+				writeError(w, "failed to save settings", 500)
 				return
 			}
 		}
@@ -562,7 +620,8 @@ func (srv *Server) handleCatalogSearch(w http.ResponseWriter, r *http.Request) {
 	}
 	results, err := srv.catalogStore.SearchAll(r.Context(), q)
 	if err != nil {
-		writeError(w, err.Error(), 500)
+		log.Printf("catalog search error: %v", err)
+		writeError(w, "internal server error", 500)
 		return
 	}
 	resp := make([]catalogEntryResponse, len(results))
@@ -588,7 +647,8 @@ func (srv *Server) handleCatalogEntry(w http.ResponseWriter, r *http.Request) {
 	}
 	entry, err := srv.catalogStore.GetEntry(r.Context(), id)
 	if err != nil {
-		writeError(w, err.Error(), 500)
+		log.Printf("catalog get entry error: %v", err)
+		writeError(w, "internal server error", 500)
 		return
 	}
 	if entry == nil {
@@ -632,6 +692,7 @@ func (srv *Server) handleCatalogRefresh(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 	var req refreshRequest
+	r.Body = http.MaxBytesReader(w, r.Body, maxBodySize)
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		writeError(w, "invalid JSON", 400)
 		return
@@ -658,7 +719,8 @@ func (srv *Server) handleCatalogRefresh(w http.ResponseWriter, r *http.Request) 
 
 	opts := catalog.RefreshOptions{MaxPages: req.MaxPages}
 	if err := src.Refresh(r.Context(), srv.catalogStore, opts); err != nil {
-		writeError(w, err.Error(), 500)
+		log.Printf("catalog refresh error: %v", err)
+		writeError(w, "catalog refresh failed", 500)
 		return
 	}
 	writeJSON(w, map[string]string{"status": "ok"})
@@ -690,6 +752,7 @@ func (srv *Server) handleCatalogEnrich(w http.ResponseWriter, r *http.Request) {
 	}
 
 	var req enrichRequest
+	r.Body = http.MaxBytesReader(w, r.Body, maxBodySize)
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		writeError(w, "invalid JSON", 400)
 		return
@@ -697,7 +760,8 @@ func (srv *Server) handleCatalogEnrich(w http.ResponseWriter, r *http.Request) {
 
 	enriched, err := srv.catalogEnricher.EnrichMissingImages(r.Context(), req.BatchSize)
 	if err != nil {
-		writeJSON(w, enrichResponse{Status: "error", Enabled: true, Enriched: enriched, Message: err.Error()})
+		log.Printf("catalog enrich error: %v", err)
+		writeJSON(w, enrichResponse{Status: "error", Enabled: true, Enriched: enriched, Message: "enrichment failed"})
 		return
 	}
 	writeJSON(w, enrichResponse{Status: "ok", Enabled: true, Enriched: enriched})
@@ -719,7 +783,8 @@ func (srv *Server) handleCatalogProfileFromEntry(w http.ResponseWriter, r *http.
 	}
 	entry, err := srv.catalogStore.GetEntry(r.Context(), id)
 	if err != nil {
-		writeError(w, err.Error(), 500)
+		log.Printf("catalog get entry error: %v", err)
+		writeError(w, "internal server error", 500)
 		return
 	}
 	if entry == nil {
@@ -772,6 +837,10 @@ func isLocalOrigin(origin string) bool {
 		origin == "http://127.0.0.1"
 }
 
+func constantTimeEq(a, b string) bool {
+	return subtle.ConstantTimeCompare([]byte(a), []byte(b)) == 1
+}
+
 func isSafeMethod(m string) bool {
 	return m == http.MethodGet || m == http.MethodHead || m == http.MethodOptions
 }
@@ -798,7 +867,7 @@ func withSecurity(token string, next http.Handler) http.Handler {
 
 		// Require token for unsafe methods when token protection is active.
 		if token != "" && !isSafeMethod(r.Method) {
-			if r.Header.Get("X-Picord-Token") != token {
+			if !constantTimeEq(r.Header.Get("X-Picord-Token"), token) {
 				writeError(w, "Forbidden", http.StatusForbidden)
 				return
 			}
@@ -807,7 +876,7 @@ func withSecurity(token string, next http.Handler) http.Handler {
 		// Require correct Content-Type for JSON body endpoints.
 		if !isSafeMethod(r.Method) && strings.HasPrefix(r.URL.Path, "/api/") {
 			ct := r.Header.Get("Content-Type")
-			if ct != "" && !strings.Contains(ct, "application/json") {
+			if ct != "" && !strings.HasPrefix(ct, "application/json") {
 				writeError(w, "Content-Type must be application/json", http.StatusUnsupportedMediaType)
 				return
 			}
@@ -819,8 +888,11 @@ func withSecurity(token string, next http.Handler) http.Handler {
 
 func StartServer(addr string, srv *Server) *http.Server {
 	httpServer := &http.Server{
-		Addr:    addr,
-		Handler: srv.Handler(),
+		Addr:         addr,
+		Handler:      srv.Handler(),
+		ReadTimeout:  10 * time.Second,
+		WriteTimeout: 10 * time.Second,
+		IdleTimeout:  60 * time.Second,
 	}
 	go func() {
 		log.Printf("Picord API: http://%s\n", addr)
