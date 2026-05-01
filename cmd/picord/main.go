@@ -401,6 +401,8 @@ func runDaemonWithOptions(debug bool, opts daemonOptions) int {
 		tray.SetAutoDetectState(enabled)
 		if !enabled {
 			rpcMgr.clearActivity()
+			currentProfile = nil
+			state.ClearActive()
 			tray.UpdateStatus("Disabled")
 		} else {
 			tray.UpdateStatus("Idle")
