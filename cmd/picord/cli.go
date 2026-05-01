@@ -158,15 +158,29 @@ func apiGet(path string) (*http.Response, error) {
 }
 
 func apiPost(path string, body any) (*http.Response, error) {
-	data, err := json.Marshal(body)
+	return apiMethod(http.MethodPost, path, body)
+}
+
+func apiPut(path string, body any) (*http.Response, error) {
+	return apiMethod(http.MethodPut, path, body)
+}
+
+func apiMethod(method, path string, body any) (*http.Response, error) {
+	var reader io.Reader
+	if body != nil {
+		data, err := json.Marshal(body)
+		if err != nil {
+			return nil, err
+		}
+		reader = bytes.NewReader(data)
+	}
+	req, err := http.NewRequest(method, getAPIBase()+path, reader)
 	if err != nil {
 		return nil, err
 	}
-	req, err := http.NewRequest(http.MethodPost, getAPIBase()+path, bytes.NewReader(data))
-	if err != nil {
-		return nil, err
+	if reader != nil {
+		req.Header.Set("Content-Type", "application/json")
 	}
-	req.Header.Set("Content-Type", "application/json")
 	if t := getAPIToken(); t != "" {
 		req.Header.Set("X-Picord-Token", t)
 	}
@@ -451,7 +465,7 @@ func cmdAutoDetect(args []string) int {
 		return 1
 	}
 
-	resp, err := apiPost("/api/settings", map[string]any{"auto_detect": enabled})
+	resp, err := apiPut("/api/settings", map[string]any{"auto_detect": enabled})
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "Cannot connect to picord daemon: %v\n", err)
 		return 1
